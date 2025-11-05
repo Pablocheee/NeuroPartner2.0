@@ -1,4 +1,4 @@
-﻿import httpx
+import httpx
 from flask import Flask, request, jsonify
 import google.generativeai as genai
 import os
@@ -343,21 +343,12 @@ class MenuManager:
         # Обновляем шаг
         update_lesson_state(chat_id, lesson_topic, current_step + 1)
         
-        # КЛАВИАТУРА С БОЛЬШЕ ВАРИАНТАМИ
-        keyboard_buttons = []
-        
-        # Быстрые ответы если нужно
-        if "?" in teacher_response:
-            keyboard_buttons.append([{"text": "💡 Давай пример", "callback_data": "request_example"}])
-            keyboard_buttons.append([{"text": "🤔 Объясни подробнее", "callback_data": "explain_more"}])
-        
-        keyboard_buttons.extend([
-            [{"text": "✅ Завершить урок", "callback_data": f"complete_lesson_{hash(lesson_topic)}"}],
-            [{"text": "🔄 Начать заново", "callback_data": f"restart_lesson_{hash(lesson_topic)}"}],
-            [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
-        ])
-        
-        keyboard = {"inline_keyboard": keyboard_buttons}
+        # ПРОСТАЯ КЛАВИАТУРА - ТОЛЬКО НАЗАД
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
+            ]
+        }
         
         # ФОРМАТИРУЕМ ТЕКСТ БЕЗ ДУБЛИРОВАНИЯ
         text = f"""📚 *{lesson_topic}*
