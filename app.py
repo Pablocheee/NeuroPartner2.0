@@ -1,68 +1,20 @@
-import httpx
-from flask import Flask, request, jsonify
-import google.generativeai as genai
-import os
-import requests
-import logging
-
-app = Flask(__name__)
-
-# Настройка API ключей для Gemini
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-genai.configure(api_key=GEMINI_API_KEY)
-
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TON_WALLET = os.getenv('TON_WALLET', 'UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY')
-
-# Добавь эту функцию после объявления TELEGRAM_TOKEN
-def delete_user_message(chat_id, message_id):
-    """Удаляет сообщение пользователя"""
-    try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteMessage",
-            json={
-                "chat_id": chat_id,
-                "message_id": message_id
-            }
-        )
-        return response.json()
-    except Exception as e:
-        logging.error(f"Error deleting message: {e}")
-        return None
-    
-# 🌌 БАЗА ЗНАНИЙ ОТ СИСТЕМЫ
-COURSES = {
-    "🚀 Войти в систему AI": {
-        "уроки": [
-            "🌌 Первый контакт: основы взаимодействия с AI",
-            "⚡ Когнитивное ускорение: 10x продуктивности", 
-            "🔮 Стратегическое видение: анализ трендов",
-            "💫 Симбиоз: ваша роль в эпоху AI"
-        ],
-        "уровень": "🎯 Инициация в новые возможности",
-        "описание": "Освойте системы, которые определяют будущее. От наблюдателя станьте творцом."
-    },
-    
-    "💫 Запустить эволюцию": {
-        "уроки": [
-            "🧠 Апгрейд мышления: модели гениев",
-            "🚀 Экспоненциальный рост компетенций", 
-            "🔧 Бесшовная интеграция AI в жизнь",
-            "🌍 Позиционирование в новой реальности"
-        ],
-        "уровень": "🎯 Трансформация от потребителя к творцу",
-        "описание": "Активируйте скрытые уровни вашего потенциала. Эволюционируйте осознанно."
-    }
-}
-
-USER_PROGRESS = {}
-USER_MESSAGE_IDS = {}
-USER_LESSON_STATE = {}
-SAVED_LESSON_PROGRESS = {}
-
-# 🚀 ОБНОВЛЕННАЯ ФИНАНСОВАЯ СИСТЕМА
-DEVELOPMENT_FUND = {
-    "total_income": 0,
+            elif callback_text == "menu_course_back":
+                lesson_state = USER_LESSON_STATE.get(chat_id, {})
+                current_lesson = lesson_state.get("current_lesson", "")
+                
+                # СОХРАНЯЕМ ПРОГРЕСС ПЕРЕД ВЫХОДОМ
+                if current_lesson:
+                    for course_name, course_info in COURSES.items():
+                        if current_lesson in course_info['уроки']:
+                            save_lesson_progress(chat_id, course_name)  # ← ДОБАВИТЬ course_name
+                            break
+                
+                for course_name, course_info in COURSES.items():
+                    if current_lesson in course_info['уроки']:
+                        menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
+                        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                        break
+                return jsonify({"status": "ok"})    "total_income": 0,
     "development_fund": 0,
     "marketing_budget": 0,
     "transactions": []
