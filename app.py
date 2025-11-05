@@ -31,28 +31,22 @@ def delete_user_message(chat_id, message_id):
         logging.error(f"Error deleting message: {e}")
         return None
 
-# 🌌 БАЗА ЗНАНИЙ ОТ СИСТЕМЫ
+# 🌌 ОБНОВЛЕННАЯ БАЗА ЗНАНИЙ С NEUROTEACHER
 COURSES = {
-    "🚀 Войти в систему AI": {
+    "🧠 NeuroTeacher": {
         "уроки": [
             "🌌 Первый контакт: основы взаимодействия с AI",
             "⚡ Когнитивное ускорение: 10x продуктивности", 
             "🔮 Стратегическое видение: анализ трендов",
-            "💫 Симбиоз: ваша роль в эпоху AI"
-        ],
-        "уровень": "🎯 Инициация в новые возможности",
-        "описание": "Освойте системы, которые определяют будущее. От наблюдателя станьте творцом."
-    },
-    
-    "💫 Запустить эволюцию": {
-        "уроки": [
+            "💫 Симбиоз: ваша роль в эпоху AI",
+            "🎯 Инициация в новые возможности",
             "🧠 Апгрейд мышления: модели гениев",
             "🚀 Экспоненциальный рост компетенций", 
             "🔧 Бесшовная интеграция AI в жизнь",
             "🌍 Позиционирование в новой реальности"
         ],
-        "уровень": "🎯 Трансформация от потребителя к творцу",
-        "описание": "Активируйте скрытые уровни вашего потенциала. Эволюционируйте осознанно."
+        "уровень": "🎯 Полная трансформация мышления",
+        "описание": "От основ до продвинутых стратегий. Полный путь от новичка до творца новой реальности."
     }
 }
 
@@ -131,17 +125,19 @@ class DialogAITeacher:
         
         return "\n".join(formatted)
 
-    def create_progress_tracker(self, completed_lessons, total_lessons=4):
+    def create_progress_tracker(self, completed_lessons, total_lessons=9):
         progress_percent = (completed_lessons / total_lessons) * 100
         progress_bar = "🟩" * completed_lessons + "⬜" * (total_lessons - completed_lessons)
         
         achievements = []
         if completed_lessons >= 1:
             achievements.append("🎯 Начинающий")
-        if completed_lessons >= 2:
+        if completed_lessons >= 3:
             achievements.append("🚀 Практик") 
-        if completed_lessons >= 4:
-            achievements.append("🏆 Специалист")
+        if completed_lessons >= 6:
+            achievements.append("💫 Продвинутый")
+        if completed_lessons >= 9:
+            achievements.append("🏆 Мастер")
             
         return {
             "progress_bar": f"{progress_bar} {progress_percent:.1f}%",
@@ -205,21 +201,18 @@ def add_teacher_response(chat_id, teacher_message):
             "content": teacher_message
         })
 
-# 🎯 ПОЛНАЯ СИСТЕМА МЕНЮ
+# 🎯 ОБНОВЛЕННАЯ СИСТЕМА МЕНЮ С NEUROPARTNER
 class MenuManager:
     def get_main_menu(self):
         keyboard = {
             "inline_keyboard": [
                 [
-                    {"text": "🚀 Войти в систему AI", "callback_data": "menu_course_🚀 Войти в систему AI"},
-                    {"text": "💫 Запустить эволюцию", "callback_data": "menu_course_💫 Запустить эволюцию"}
+                    {"text": "🧠 NeuroTeacher", "callback_data": "menu_course_🧠 NeuroTeacher"},
+                    {"text": "💫 NeuroPartner", "callback_data": "menu_neuropartner"}
                 ],
                 [
                     {"text": "💰 Премиум доступ", "callback_data": "menu_premium"},
                     {"text": "👤 Мой профиль", "callback_data": "menu_profile"}
-                ],
-                [
-                    {"text": "🌍 Фонд развития", "callback_data": "menu_development_fund"}
                 ]
             ]
         }
@@ -276,6 +269,22 @@ class MenuManager:
         
         return {"text": text, "keyboard": keyboard}
     
+    def get_neuropartner_menu(self):
+        """Меню NeuroPartner - простой чат с ИИ"""
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
+            ]
+        }
+        
+        text = """🌌 *NeuroPartner*
+
+*Привет! Я NeuroPartner, чем могу помочь?*
+
+Просто напишите мне сообщение, и я помогу вам с любыми вопросами!"""
+        
+        return {"text": text, "keyboard": keyboard}
+    
     def get_premium_menu(self):
         payment_link = generate_ton_payment_link("premium_user")
         
@@ -322,28 +331,6 @@ class MenuManager:
         
         return {"text": text, "keyboard": keyboard}
     
-    def get_development_fund_menu(self):
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
-            ]
-        }
-        
-        text = f"""🌍 *СИСТЕМА DEVELOPMENT FUND*
-
-💰 Всего доходов: {DEVELOPMENT_FUND['total_income']} TON
-💫 Накоплено в фонд развития: {DEVELOPMENT_FUND['development_fund']} TON  
-🚀 Маркетинг бюджет: {DEVELOPMENT_FUND['marketing_budget']} TON
-
-📊 Распределение доходов:
-• 70% - развитие платформы
-• 20% - маркетинг и привлечение  
-• 10% - основателю
-
-⚡ *Создаем будущее образования вместе*"""
-        
-        return {"text": text, "keyboard": keyboard}
-    
     def get_dialog_lesson(self, chat_id, lesson_topic, user_input=None):
         user_level = USER_PROGRESS.get(chat_id, {}).get('уровень', 1)
         lesson_state = USER_LESSON_STATE.get(chat_id, {})
@@ -377,6 +364,37 @@ class MenuManager:
 {teacher_response}"""
         
         return {"text": text, "keyboard": keyboard}
+    
+    def get_neuropartner_response(self, chat_id, user_message):
+        """Генерирует ответ NeuroPartner на сообщение пользователя"""
+        try:
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            
+            system_prompt = f"""
+            Ты - NeuroPartner, дружелюбный AI-помощник. Отвечай на русском языке.
+            
+            Сообщение пользователя: {user_message}
+            
+            Правила:
+            - Будь полезным и доброжелательным
+            - Отвечай кратко, но информативно
+            - Предлагай помощь по вопросам AI, обучения, продуктивности
+            - Не будь слишком формальным
+            - Максимум 3-4 предложения в ответе
+            """
+            
+            response = model.generate_content(
+                system_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=300,
+                    temperature=0.7
+                )
+            )
+            
+            return response.text
+        except Exception as e:
+            logging.error(f"NeuroPartner error: {e}")
+            return "🌌 Извините, возникла техническая ошибка. Пожалуйста, попробуйте еще раз."
 
 # Инициализация менеджера
 menu_manager = MenuManager()
@@ -439,7 +457,7 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
 def home():
     return jsonify({
         "status": "NeuroTeacher - Dialog Education Platform",
-        "version": "4.4", 
+        "version": "4.5", 
         "ready": True,
         "ai_provider": "Gemini Flash 2.0",
         "founder_wallet": TON_WALLET
@@ -475,6 +493,11 @@ def telegram_webhook():
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
+            elif callback_text == "menu_neuropartner":
+                menu_data = menu_manager.get_neuropartner_menu()
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                return jsonify({"status": "ok"})
+            
             elif callback_text == "menu_premium":
                 menu_data = menu_manager.get_premium_menu()
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
@@ -482,11 +505,6 @@ def telegram_webhook():
             
             elif callback_text == "menu_profile":
                 menu_data = menu_manager.get_profile_menu(chat_id)
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-                return jsonify({"status": "ok"})
-            
-            elif callback_text == "menu_development_fund":
-                menu_data = menu_manager.get_development_fund_menu()
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
@@ -608,8 +626,23 @@ def telegram_webhook():
             edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
             return jsonify({"status": "ok"})
         
+        # ПРОВЕРЯЕМ, НАХОДИТСЯ ЛИ ПОЛЬЗОВАТЕЛЬ В РЕЖИМЕ NEUROPARTNER
+        neuropartner_active = False
+        if chat_id in USER_MESSAGE_IDS:
+            # Простая проверка - если последнее сообщение было из меню NeuroPartner
+            try:
+                response = requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getChat",
+                    json={"chat_id": chat_id}
+                )
+                # Если пользователь в режиме NeuroPartner
+                neuropartner_active = True
+            except:
+                pass
+        
         lesson_state = USER_LESSON_STATE.get(chat_id, {})
         if lesson_state and "current_lesson" in lesson_state:
+            # РЕЖИМ УРОКА
             current_lesson = lesson_state["current_lesson"]
             
             # УДАЛЯЕМ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ
@@ -621,8 +654,27 @@ def telegram_webhook():
             menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, text)
             edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
             
-            return jsonify({"status": "ok"})
+        else:
+            # РЕЖИМ NEUROPARTNER (простой чат)
+            # УДАЛЯЕМ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ
+            if message_id:
+                delete_user_message(chat_id, message_id)
+            
+            # ПОЛУЧАЕМ ОТВЕТ ОТ NEUROPARTNER
+            partner_response = menu_manager.get_neuropartner_response(chat_id, text)
+            
+            keyboard = {
+                "inline_keyboard": [
+                    [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
+                ]
+            }
+            
+            response_text = f"""🌌 *NeuroPartner*
 
+{partner_response}"""
+            
+            edit_main_message(chat_id, response_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
+            
         return jsonify({"status": "ok"})        
         
     except Exception as e:
