@@ -550,12 +550,12 @@ def telegram_webhook():
                     # НАХОДИМ УРОК ПО КУРСУ И ИНДЕКСУ
                     if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
                         lesson = COURSES[course_name]['уроки'][lesson_index]
-                            
-                            # ПРОВЕРЯЕМ, ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС ДЛЯ ЭТОГО КУРСА
-                            restored_lesson = restore_lesson_progress(chat_id, course_name)
-                            if restored_lesson == lesson:
-                                # ЕСТЬ СОХРАНЕННЫЙ ПРОГРЕСС - ПРОДОЛЖАЕМ
-                                last_conversation = USER_LESSON_STATE[chat_id]['conversation']
+                        
+                        # ПРОВЕРЯЕМ, ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС ДЛЯ ЭТОГО КУРСА
+                        restored_lesson = restore_lesson_progress(chat_id, course_name)
+                        if restored_lesson == lesson:
+                            # ЕСТЬ СОХРАНЕННЫЙ ПРОГРЕСС - ПРОДОЛЖАЕМ
+                            last_conversation = USER_LESSON_STATE[chat_id]['conversation']
                                 
                                 # РАЗНЫЕ ВАРИАНТЫ РЕАКЦИЙ УЧИТЕЛЯ
                                 reactions = [
