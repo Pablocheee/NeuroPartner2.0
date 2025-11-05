@@ -4,6 +4,7 @@ import google.generativeai as genai
 import os
 import requests
 import logging
+import random  # Добавлен импорт для random
 
 app = Flask(__name__)
 
@@ -565,55 +566,54 @@ def telegram_webhook():
                                 "О, ты вернулся! Отлично. Мы как раз говорили о: *{summary}*",
                                 "Привет! Как раз вовремя. Мы обсуждали: *{summary}*"
                             ]
-                                
-                                if last_conversation:
-                                    last_message = last_conversation[-1]['content']
-                                    if len(last_message) > 40:
-                                        summary = last_message[:40] + "..."
-                                    else:
-                                        summary = last_message
+                            
+                            if last_conversation:
+                                last_message = last_conversation[-1]['content']
+                                if len(last_message) > 40:
+                                    summary = last_message[:40] + "..."
                                 else:
-                                    summary = "основах этой темы"
-                                
-                                import random
-                                reaction = random.choice(reactions).format(summary=summary)
-                                
-                                welcome_text = f"""🧠 *Учитель NeuroTeacher*
+                                    summary = last_message
+                            else:
+                                summary = "основах этой темы"
+                            
+                            reaction = random.choice(reactions).format(summary=summary)
+                            
+                            welcome_text = f"""🧠 *Учитель NeuroTeacher*
 
 📚 Тема: {lesson}
 
 {reaction}"""
-                            else:
-                                # НОВЫЙ УРОК ИЛИ ДРУГОЙ УРОК
-                                USER_LESSON_STATE[chat_id] = {
-                                    "current_lesson": lesson,
-                                    "step": 0,
-                                    "conversation": []
-                                }
-                                
-                                # РАЗНЫЕ ПРИВЕТСТВИЯ ДЛЯ НОВОГО УРОКА
-                                greetings = [
-                                    f"Привет! Готов исследовать {lesson}?",
-                                    f"Добро пожаловать на урок по {lesson}!",
-                                    f"Начнем наше путешествие в мир {lesson}?",
-                                    f"Рад видеть тебя на уроке {lesson}!",
-                                    f"Приветствую! Сегодня мы изучим {lesson}"
-                                ]
-                                
-                                welcome_text = f"""🧠 *Учитель NeuroTeacher*
+                        else:
+                            # НОВЫЙ УРОК ИЛИ ДРУГОЙ УРОК
+                            USER_LESSON_STATE[chat_id] = {
+                                "current_lesson": lesson,
+                                "step": 0,
+                                "conversation": []
+                            }
+                            
+                            # РАЗНЫЕ ПРИВЕТСТВИЯ ДЛЯ НОВОГО УРОКА
+                            greetings = [
+                                f"Привет! Готов исследовать {lesson}?",
+                                f"Добро пожаловать на урок по {lesson}!",
+                                f"Начнем наше путешествие в мир {lesson}?",
+                                f"Рад видеть тебя на уроке {lesson}!",
+                                f"Приветствую! Сегодня мы изучим {lesson}"
+                            ]
+                            
+                            welcome_text = f"""🧠 *Учитель NeuroTeacher*
 
 📚 Тема: {lesson}
 
 {random.choice(greetings)}"""
-                            
-                            keyboard = {
-                                "inline_keyboard": [
-                                    [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
-                                ]
-                            }
-                            
-                            edit_main_message(chat_id, welcome_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
-                            break
+                        
+                        keyboard = {
+                            "inline_keyboard": [
+                                [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
+                            ]
+                        }
+                        
+                        edit_main_message(chat_id, welcome_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
+                
                 return jsonify({"status": "ok"})
             
             elif callback_text.startswith('complete_lesson_'):
@@ -678,7 +678,7 @@ def telegram_webhook():
         message = data.get('message', {})
         chat_id = message.get('chat', {}).get('id')
         text = message.get('text', '')
-        message_id = message.get('message_id')  # ← ДОБАВЬ ЭТУ СТРОКУ
+        message_id = message.get('message_id')  # ← ДОБАВЛЕНО
 
         if not chat_id:
             return jsonify({"status": "error", "message": "No chat_id"})
