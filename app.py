@@ -517,6 +517,27 @@ def telegram_webhook():
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
+            elif callback_text.startswith("menu_course_"):
+                course_name = callback_text.replace("menu_course_", "")
+                try:
+                    menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
+                    
+                    # ПРОВЕРЯЕМ ЕСТЬ ЛИ СОХРАНЕННЫЙ MESSAGE_ID
+                    saved_message_id = USER_MESSAGE_IDS.get(chat_id)
+                    if saved_message_id:
+                        # ПЫТАЕМСЯ ОТРЕДАКТИРОВАТЬ
+                        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], saved_message_id)
+                    else:
+                        # ЕСЛИ НЕТ СОХРАНЕННОГО ID - ОТПРАВЛЯЕМ НОВОЕ СООБЩЕНИЕ
+                        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
+                        
+                except Exception as e:
+                    logging.error(f"Error opening course {course_name}: {e}")
+                    menu_data = menu_manager.get_main_menu()
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                
+                return jsonify({"status": "ok"})
+            
             # ДИАЛОГОВЫЕ УРОКИ
             elif callback_text.startswith('start_lesson_'):
                 lesson_hash = callback_text.replace('start_lesson_', '')
