@@ -466,25 +466,6 @@ def home():
 def health():
     return jsonify({"status": "healthy", "service": "NeuroTeacher", "ai": "Gemini Flash 2.0"})
 
-        if 'callback_query' in data:
-            callback_data = data['callback_query']
-            chat_id = callback_data['message']['chat']['id']
-            callback_text = callback_data['data']
-            message_id = callback_data['message']['message_id']
-            
-            logger.info(f"=== CALLBACK DEBUG ===")
-            logger.info(f"Chat ID: {chat_id}")
-            logger.info(f"Callback text: {callback_text}")
-            logger.info(f"Message ID: {message_id}")
-            logger.info(f"USER_MESSAGE_IDS: {USER_MESSAGE_IDS.get(chat_id, 'Not set')}")
-            logger.info(f"=== END DEBUG ===")
-            
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-                json={"callback_query_id": callback_data['id']}
-            )
-
-@app.route('/webhook', methods=['POST'])
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     try:
