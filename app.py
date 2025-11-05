@@ -6,33 +6,15 @@ import requests
 import logging
 import random
 import time
-import json
-from datetime import datetime
 
 app = Flask(__name__)
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 # Настройка API ключей для Gemini
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-if not GEMINI_API_KEY:
-    logger.warning("GEMINI_API_KEY not found in environment variables")
-
 genai.configure(api_key=GEMINI_API_KEY)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-if not TELEGRAM_TOKEN:
-    logger.error("TELEGRAM_TOKEN not found in environment variables")
-
 TON_WALLET = os.getenv('TON_WALLET', 'UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY')
-
-# Константы
-MAX_MESSAGE_LENGTH = 4096  # Максимальная длина сообщения в Telegram
 
 def delete_user_message(chat_id, message_id):
     """Удаляет сообщение пользователя"""
@@ -42,122 +24,12 @@ def delete_user_message(chat_id, message_id):
             json={
                 "chat_id": chat_id,
                 "message_id": message_id
-            },
-            timeout=10
+            }
         )
         return response.json()
     except Exception as e:
         logging.error(f"Error deleting message: {e}")
         return None
-
-def split_long_message(text, max_length=MAX_MESSAGE_LENGTH):
-    """Разделяет длинное сообщение на части"""
-    if len(text) <= max_length:
-        return [text]
-    
-    parts = []
-    while text:
-        if len(text) <= max_length:
-            parts.append(text)
-            break
-        
-        # Ищем последний перенос строки в пределах максимальной длины
-        split_pos = text.rfind('\n', 0, max_length)
-        if split_pos == -1:
-            # Если переносов строк нет, разбиваем по словам
-            split_pos = text.rfind(' ', 0, max_length)
-            if split_pos == -1:
-                # Если слов нет, принудительно обрезаем
-                split_pos = max_length
-        
-        parts.append(text[:split_pos])
-        text = text[split_pos:].strip()
-    
-    return parts
-
-def send_telegram_message(chat_id, text, keyboard=None, parse_mode="Markdown"):
-    """Отправляет сообщение в Telegram с обработкой длинных сообщений"""
-    try:
-        message_parts = split_long_message(text)
-        results = []
-        
-        for i, part in enumerate(message_parts):
-            payload = {
-                "chat_id": chat_id,
-                "text": part,
-                "parse_mode": parse_mode
-            }
-            
-            # Добавляем клавиатуру только к последней части
-            if keyboard and i == len(message_parts) - 1:
-                payload["reply_markup"] = keyboard
-            
-            response = requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                json=payload,
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('ok'):
-                    results.append(result)
-                    # Сохраняем ID только последнего сообщения
-                    if i == len(message_parts) - 1:
-                        USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
-                else:
-                    logger.error(f"Telegram API error: {result}")
-            else:
-                logger.error(f"HTTP error {response.status_code}: {response.text}")
-        
-        return results[0] if results else {"ok": False}
-        
-    except Exception as e:
-        logging.error(f"Error sending message: {e}")
-        return {"ok": False}
-
-def edit_main_message(chat_id, text, keyboard=None, message_id=None):
-    """Редактирует сообщение или отправляет новое"""
-    
-    # Используем сохраненный message_id если не передан
-    if message_id is None and chat_id in USER_MESSAGE_IDS:
-        message_id = USER_MESSAGE_IDS[chat_id]
-    
-    # Пытаемся отредактировать существующее сообщение
-    if message_id:
-        try:
-            # Для редактирования отправляем только первую часть длинного сообщения
-            message_parts = split_long_message(text)
-            first_part = message_parts[0]
-            
-            payload = {
-                "chat_id": chat_id,
-                "message_id": message_id,
-                "text": first_part,
-                "parse_mode": "Markdown"
-            }
-            
-            if keyboard:
-                payload["reply_markup"] = keyboard
-            
-            response = requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
-                json=payload,
-                timeout=10
-            )
-            
-            result = response.json()
-            if result.get('ok'):
-                # Отправляем остальные части как новые сообщения
-                for part in message_parts[1:]:
-                    send_telegram_message(chat_id, part)
-                return result
-                
-        except Exception as e:
-            logging.error(f"Error editing message {message_id}: {e}")
-    
-    # Если редактирование не удалось, отправляем новое сообщение
-    return send_telegram_message(chat_id, text, keyboard)
 
 # 🌌 БАЗА ЗНАНИЙ ОТ СИСТЕМЫ
 COURSES = {
@@ -187,6 +59,7 @@ COURSES = {
 USER_PROGRESS = {}
 USER_MESSAGE_IDS = {}
 USER_LESSON_STATE = {}
+# ИЗМЕНЕНИЕ: Упрощаем структуру сохраненного прогресса
 USER_SAVED_PROGRESS = {}
 
 # 🚀 ОБНОВЛЕННАЯ ФИНАНСОВАЯ СИСТЕМА
@@ -199,58 +72,64 @@ DEVELOPMENT_FUND = {
 
 # 🎯 УЛУЧШЕННЫЙ ДИАЛОГОВЫЙ AI-ПРЕПОДАВАТЕЛЬ (GEMINI)
 class DialogAITeacher:
-    def __init__(self):
-        try:
-            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
-            self.healthy = True
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini model: {e}")
-            self.healthy = False
 
-    def _format_conversation_history(self, conversation_history):
-        """Форматирует историю диалога для промпта"""
-        if not conversation_history:
-            return "История диалога пуста."
+    def __init__(self):
+        self.teacher_styles = {
+            "объяснение": "🧠",
+            "вопрос": "❓", 
+            "практика": "🔧",
+            "обратная связь": "💫"
+        }
+        # Настройка модели Gemini
+        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+
+    def generate_lesson_step(self, lesson_topic, user_level, conversation_history, current_step):
+        """Генерирует следующий шаг урока используя Gemini"""
+        
+        system_prompt = f"""
+        Ты - опытный AI-преподаватель NeuroTeacher. Веди естественный диалог с учеником.
+        
+        Тема урока: {lesson_topic}
+        Уровень ученика: {user_level}/5
+        
+        История диалога:
+        {self._format_conversation_history(conversation_history)}
+        
+        Важные правила:
+        1. Будь естественным и вовлекающим
+        2. Адаптируй объяснения под уровень понимания
+        3. Задавай открытые вопросы
+        4. Будь немного креативным в подаче
+        5. Не будь слишком формальным
+        6. Отвечай на русском языке
+        7. Будь кратким, но информативным (максимум 3-4 предложения)
+        
+        Продолжи урок естественным образом:
+        """
+        
+        try:
+            response = self.model.generate_content(
+                system_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=500,
+                    temperature=0.8
+                )
+            )
+            return response.text
+        except Exception as e:
+            logging.error(f"Gemini API error: {e}")
+            return "🧠 Давайте продолжим наш урок! Расскажите, что вам было наиболее интересно в предыдущей части?"
+
+    def _format_conversation_history(self, history):
+        if not history:
+            return "Диалог только начинается"
         
         formatted = []
-        for msg in conversation_history[-6:]:  # Берем последние 6 сообщений
-            role = "Студент" if msg["role"] == "student" else "Учитель"
+        for msg in history[-4:]:  # Берем последние 4 сообщения
+            role = "Ученик" if msg["role"] == "student" else "Учитель"
             formatted.append(f"{role}: {msg['content']}")
         
         return "\n".join(formatted)
-
-    def generate_lesson_step(self, lesson_topic, user_level, conversation_history, current_step):
-        if not self.healthy:
-            return "🤖 Система AI временно недоступна. Пожалуйста, попробуйте позже."
-        
-        try:
-            prompt = f"""
-Ты - преподаватель NeuroTeacher, эксперт в области искусственного интеллекта и нейротехнологий.
-Тема текущего урока: {lesson_topic}
-Уровень студента: {user_level}
-Текущий шаг в уроке: {current_step}
-
-История диалога:
-{self._format_conversation_history(conversation_history)}
-
-Продолжи урок естественно, как опытный наставник. Будь конкретен, практичен и вдохновляющ.
-Дай полезную информацию по теме, предложи практические упражнения или задай наводящий вопрос.
-
-Формат: естественный диалог, без пометок "учитель" или "студент".
-            """
-            
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
-            
-        except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            fallback_responses = [
-                "Что вас особенно интересует в этой теме?",
-                "Какой аспект готовы обсудить глубже?",
-                "Есть ли конкретные вопросы по этой теме?",
-                "Давайте продолжим исследовать эту тему вместе."
-            ]
-            return random.choice(fallback_responses)
 
     def create_progress_tracker(self, completed_lessons, total_lessons=4):
         progress_percent = (completed_lessons / total_lessons) * 100
@@ -274,36 +153,31 @@ class DialogAITeacher:
 # Инициализация преподавателя
 dialog_teacher = DialogAITeacher()
 
+# ПРОСТЫЕ И ЭФФЕКТИВНЫЕ ФУНКЦИИ СОХРАНЕНИЯ ПРОГРЕССА
 def save_lesson_progress(chat_id):
     """Сохраняет текущий прогресс урока"""
     if chat_id in USER_LESSON_STATE:
         USER_SAVED_PROGRESS[chat_id] = USER_LESSON_STATE[chat_id].copy()
-        logger.info(f"Прогресс сохранен для {chat_id}: {USER_SAVED_PROGRESS[chat_id]['current_lesson']}")
+        logging.info(f"Прогресс сохранен для {chat_id}: {USER_SAVED_PROGRESS[chat_id]['current_lesson']}")
 
 def restore_lesson_progress(chat_id):
     """Восстанавливает прогресс урока если есть сохраненный"""
     if chat_id in USER_SAVED_PROGRESS:
         USER_LESSON_STATE[chat_id] = USER_SAVED_PROGRESS[chat_id].copy()
-        logger.info(f"Прогресс восстановлен для {chat_id}: {USER_LESSON_STATE[chat_id]['current_lesson']}")
+        logging.info(f"Прогресс восстановлен для {chat_id}: {USER_LESSON_STATE[chat_id]['current_lesson']}")
         return True
     return False
 
 def generate_ton_payment_link(chat_id, amount=10):
-    return f"https://app.tonkeeper.com/transfer/{TON_WALLET}?amount={amount*1000000000}&text=premium_{chat_id}"
+    return f"https://app.tonkeeper.com/transfer/UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY?amount={amount*1000000000}&text=premium_{chat_id}"
 
 def update_user_progress(chat_id, lesson_name):
     if chat_id not in USER_PROGRESS:
-        USER_PROGRESS[chat_id] = {
-            "пройденные_уроки": [], 
-            "уровень": 1, 
-            "баллы": 0,
-            "последняя_активность": datetime.now().isoformat()
-        }
+        USER_PROGRESS[chat_id] = {"пройденные_уроки": [], "уровень": 1, "баллы": 0}
     
     if lesson_name not in USER_PROGRESS[chat_id]["пройденные_уроки"]:
         USER_PROGRESS[chat_id]["пройденные_уроки"].append(lesson_name)
         USER_PROGRESS[chat_id]["баллы"] += 10
-        USER_PROGRESS[chat_id]["последняя_активность"] = datetime.now().isoformat()
         
         if len(USER_PROGRESS[chat_id]["пройденные_уроки"]) % 2 == 0:
             USER_PROGRESS[chat_id]["уровень"] += 1
@@ -313,26 +187,22 @@ def update_lesson_state(chat_id, lesson_name, step=0, user_message=None):
         USER_LESSON_STATE[chat_id] = {
             "current_lesson": lesson_name,
             "step": step,
-            "conversation": [],
-            "started_at": datetime.now().isoformat()
+            "conversation": []
         }
     
     if user_message:
         USER_LESSON_STATE[chat_id]["conversation"].append({
             "role": "student", 
-            "content": user_message,
-            "timestamp": datetime.now().isoformat()
+            "content": user_message
         })
     
     USER_LESSON_STATE[chat_id]["step"] = step
-    USER_LESSON_STATE[chat_id]["last_updated"] = datetime.now().isoformat()
 
 def add_teacher_response(chat_id, teacher_message):
     if chat_id in USER_LESSON_STATE:
         USER_LESSON_STATE[chat_id]["conversation"].append({
             "role": "teacher",
-            "content": teacher_message,
-            "timestamp": datetime.now().isoformat()
+            "content": teacher_message
         })
 
 # 🎯 ПОЛНАЯ СИСТЕМА МЕНЮ
@@ -350,10 +220,6 @@ class MenuManager:
                 ],
                 [
                     {"text": "🌍 Фонд развития", "callback_data": "menu_development_fund"}
-                ],
-                [
-                    {"text": "🔄 Сбросить прогресс", "callback_data": "menu_reset"},
-                    {"text": "ℹ️ Помощь", "callback_data": "menu_help"}
                 ]
             ]
         }
@@ -367,6 +233,7 @@ class MenuManager:
         return {"text": text, "keyboard": keyboard}
     
     def get_enhanced_course_menu(self, course_name, user_id):
+        # Проверяем, существует ли курс
         if course_name not in COURSES:
             return {
                 "text": "❌ Курс не найден",
@@ -377,7 +244,7 @@ class MenuManager:
         progress = USER_PROGRESS.get(user_id, {"пройденные_уроки": [], "уровень": 1, "баллы": 0})
         
         progress_data = dialog_teacher.create_progress_tracker(
-            len([lesson for lesson in course_info['уроки'] if lesson in progress['пройденные_уроки']])
+            len(progress['пройденные_уроки'])
         )
         
         lesson_buttons = []
@@ -435,12 +302,8 @@ class MenuManager:
     def get_profile_menu(self, chat_id):
         progress = USER_PROGRESS.get(chat_id, {"пройденные_уроки": [], "уровень": 1, "баллы": 0})
         
-        total_lessons = sum(len(course['уроки']) for course in COURSES.values())
-        completed_lessons = len(progress['пройденные_уроки'])
-        
         keyboard = {
             "inline_keyboard": [
-                [{"text": "🔄 Сбросить прогресс", "callback_data": "reset_progress"}],
                 [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
             ]
         }
@@ -449,7 +312,7 @@ class MenuManager:
 
 📊 Уровень: {progress['уровень']}
 🎯 Баллы: {progress['баллы']}
-📚 Пройдено уроков: {completed_lessons}/{total_lessons}
+📚 Пройдено уроков: {len(progress['пройденные_уроки'])}
 
 🌍 *ФОНД РАЗВИТИЯ*
 💫 Собрано в фонд: {DEVELOPMENT_FUND['development_fund']} TON
@@ -462,7 +325,6 @@ class MenuManager:
     def get_development_fund_menu(self):
         keyboard = {
             "inline_keyboard": [
-                [{"text": "💎 Внести вклад", "url": generate_ton_payment_link("development_fund")}],
                 [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
             ]
         }
@@ -479,35 +341,6 @@ class MenuManager:
 • 10% - основателю
 
 ⚡ *Создаем будущее образования вместе*"""
-        
-        return {"text": text, "keyboard": keyboard}
-    
-    def get_help_menu(self):
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
-            ]
-        }
-        
-        text = """ℹ️ *ПОМОЩЬ*
-
-*Как пользоваться NeuroTeacher:*
-
-1. 🚀 Выберите курс из главного меню
-2. 📚 Начните урок - общайтесь с AI-преподавателем
-3. 💬 Отвечайте на вопросы, задавайте свои
-4. 📊 Следите за прогрессом в профиле
-
-*Команды:*
-/start - Главное меню
-/menu - Вернуться в меню
-
-*Особенности:*
-• Сообщения в уроках автоматически удаляются для чистоты диалога
-• Прогресс сохраняется автоматически
-• Можно продолжить с того же места после перерыва
-
-*Поддержка:* @neuroteacher_support"""
         
         return {"text": text, "keyboard": keyboard}
     
@@ -532,11 +365,9 @@ class MenuManager:
         # Обновляем шаг
         update_lesson_state(chat_id, lesson_topic, current_step + 1)
         
-        # Клавиатура с дополнительными опциями
+        # ПРОСТАЯ КЛАВИАТУРА - ТОЛЬКО НАЗАД
         keyboard = {
             "inline_keyboard": [
-                [{"text": "❓ Задать вопрос", "callback_data": "ask_question"}],
-                [{"text": "📚 Следующий раздел", "callback_data": "next_section"}],
                 [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
             ]
         }
@@ -550,43 +381,73 @@ class MenuManager:
 # Инициализация менеджера
 menu_manager = MenuManager()
 
+def edit_main_message(chat_id, text, keyboard, message_id=None):
+    """Редактирует сообщение или отправляет новое"""
+    
+    # Используем сохраненный message_id если не передан
+    if message_id is None and chat_id in USER_MESSAGE_IDS:
+        message_id = USER_MESSAGE_IDS[chat_id]
+    
+    # Пытаемся отредактировать существующее сообщение
+    if message_id:
+        try:
+            response = requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": text,
+                    "reply_markup": keyboard,
+                    "parse_mode": "Markdown"
+                },
+                timeout=10
+            )
+            result = response.json()
+            if result.get('ok'):
+                return result
+        except Exception as e:
+            logging.error(f"Error editing message {message_id}: {e}")
+    
+    # Если редактирование не удалось, отправляем новое сообщение
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": keyboard,
+                "parse_mode": "Markdown"
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('ok'):
+                # СОХРАНЯЕМ ID НОВОГО СООБЩЕНИЯ
+                USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
+                return result
+        
+        logging.error(f"Failed to send message: {response.text}")
+        return {"ok": False}
+        
+    except Exception as e:
+        logging.error(f"Error sending message: {e}")
+        return {"ok": False}
+
 @app.route('/')
 def home():
     return jsonify({
         "status": "NeuroTeacher - Dialog Education Platform",
-        "version": "4.5", 
+        "version": "4.4", 
         "ready": True,
         "ai_provider": "Gemini Flash 2.0",
-        "founder_wallet": TON_WALLET,
-        "users_count": len(USER_PROGRESS),
-        "active_lessons": len(USER_LESSON_STATE)
+        "founder_wallet": TON_WALLET
     })
 
 @app.route('/health')
 def health():
-    ai_status = "healthy" if dialog_teacher.healthy else "unhealthy"
-    return jsonify({
-        "status": "healthy", 
-        "service": "NeuroTeacher", 
-        "ai": ai_status,
-        "users": len(USER_PROGRESS),
-        "timestamp": datetime.now().isoformat()
-    })
-
-@app.route('/stats')
-def stats():
-    """Статистика платформы"""
-    total_lessons = sum(len(course['уроки']) for course in COURSES.values())
-    completed_lessons = sum(len(user['пройденные_уроки']) for user in USER_PROGRESS.values())
-    
-    return jsonify({
-        "total_users": len(USER_PROGRESS),
-        "active_lessons": len(USER_LESSON_STATE),
-        "total_completed_lessons": completed_lessons,
-        "available_courses": len(COURSES),
-        "available_lessons": total_lessons,
-        "development_fund": DEVELOPMENT_FUND
-    })
+    return jsonify({"status": "healthy", "service": "NeuroTeacher", "ai": "Gemini Flash 2.0"})
 
 @app.route('/webhook', methods=['POST'])
 def telegram_webhook():
@@ -594,260 +455,180 @@ def telegram_webhook():
         data = request.json
         
         if 'callback_query' in data:
-            return handle_callback_query(data['callback_query'])
-        elif 'message' in data:
-            return handle_message(data['message'])
-        else:
-            return jsonify({"status": "ignored", "message": "Unknown message type"})
+            callback_data = data['callback_query']
+            chat_id = callback_data['message']['chat']['id']
+            callback_text = callback_data['data']
+            message_id = callback_data['message']['message_id']
             
-    except Exception as e:
-        logging.error(f"Webhook error: {e}")
-        return jsonify({"status": "error", "message": str(e)})
-
-def handle_callback_query(callback_query):
-    """Обрабатывает callback запросы"""
-    chat_id = callback_query['message']['chat']['id']
-    callback_data = callback_query['data']
-    message_id = callback_query['message']['message_id']
-    
-    # Ответим на callback query чтобы убрать "часики"
-    requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
-        json={"callback_query_id": callback_query['id']}
-    )
-    
-    # ОСНОВНЫЕ ОБРАБОТЧИКИ МЕНЮ
-    if callback_data == "menu_main":
-        if chat_id in USER_LESSON_STATE:
-            save_lesson_progress(chat_id)
-        menu_data = menu_manager.get_main_menu()
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-    elif callback_data == "menu_premium":
-        menu_data = menu_manager.get_premium_menu()
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-    elif callback_data == "menu_profile":
-        menu_data = menu_manager.get_profile_menu(chat_id)
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-    elif callback_data == "menu_development_fund":
-        menu_data = menu_manager.get_development_fund_menu()
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-    elif callback_data == "menu_help":
-        menu_data = menu_manager.get_help_menu()
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-    elif callback_data == "reset_progress":
-        if chat_id in USER_PROGRESS:
-            del USER_PROGRESS[chat_id]
-        if chat_id in USER_LESSON_STATE:
-            del USER_LESSON_STATE[chat_id]
-        if chat_id in USER_SAVED_PROGRESS:
-            del USER_SAVED_PROGRESS[chat_id]
-        
-        menu_data = menu_manager.get_main_menu()
-        edit_main_message(chat_id, "✅ Прогресс сброшен! Начните заново.", menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-    elif callback_data.startswith("menu_course_"):
-        course_name = callback_data.replace("menu_course_", "")
-        try:
-            menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        except Exception as e:
-            logging.error(f"Error opening course {course_name}: {e}")
-            menu_data = menu_manager.get_main_menu()
-            edit_main_message(chat_id, "❌ Ошибка загрузки курса", menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-    
-    # ДИАЛОГОВЫЕ УРОКИ
-    elif callback_data.startswith('start_lesson_'):
-        parts = callback_data.replace('start_lesson_', '').split('_')
-        if len(parts) >= 2:
-            course_name = parts[0]
-            lesson_index = int(parts[1])
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
+                json={"callback_query_id": callback_data['id']}
+            )
             
-            if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
-                lesson = COURSES[course_name]['уроки'][lesson_index]
-                start_lesson_dialog(chat_id, lesson)
-    
-    elif callback_data == "menu_course_back":
-        if chat_id in USER_LESSON_STATE:
-            save_lesson_progress(chat_id)
-        
-        current_lesson = USER_LESSON_STATE.get(chat_id, {}).get('current_lesson', '')
-        found_course = None
-        
-        for course_name, course_info in COURSES.items():
-            if current_lesson in course_info['уроки']:
-                found_course = course_name
-                break
-        
-        if found_course:
-            menu_data = menu_manager.get_enhanced_course_menu(found_course, chat_id)
-            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        else:
-            menu_data = menu_manager.get_main_menu()
-            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-    
-    elif callback_data == "ask_question":
-        # Просто продолжаем диалог - пользователь может задать вопрос текстом
-        lesson_state = USER_LESSON_STATE.get(chat_id, {})
-        if lesson_state:
-            current_lesson = lesson_state["current_lesson"]
-            menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, "У меня есть вопрос")
-            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-    
-    elif callback_data == "next_section":
-        lesson_state = USER_LESSON_STATE.get(chat_id, {})
-        if lesson_state:
-            current_lesson = lesson_state["current_lesson"]
-            menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, "Перейдите к следующему разделу")
-            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-    
-    else:
-        # Неизвестный callback - возвращаем в главное меню
-        menu_data = menu_manager.get_main_menu()
-        edit_main_message(chat_id, "🔄 Обновлено", menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-    
-    return jsonify({"status": "ok"})
-
-def start_lesson_dialog(chat_id, lesson):
-    """Начинает диалоговый урок"""
-    has_saved_progress = restore_lesson_progress(chat_id)
-    
-    if has_saved_progress and USER_LESSON_STATE[chat_id]['current_lesson'] == lesson:
-        last_conversation = USER_LESSON_STATE[chat_id]['conversation']
-        teacher_messages = [msg for msg in last_conversation if msg["role"] == "teacher"]
-        
-        if teacher_messages:
-            last_teacher_msg = teacher_messages[-1]['content']
-            summary = last_teacher_msg[:50] + "..." if len(last_teacher_msg) > 50 else last_teacher_msg
-        else:
-            summary = "начале урока"
-        
-        reactions = [
-            f"Отлично, что вернулись! 😊 Продолжим с: *{summary}*",
-            f"С возвращением! Мы остановились на: *{summary}*",
-            f"Рад вас снова видеть! Продолжаем: *{summary}*"
-        ]
-        
-        welcome_text = f"""🧠 *Учитель NeuroTeacher*
+            # ОСНОВНЫЕ ОБРАБОТЧИКИ МЕНЮ
+            if callback_text == "menu_main":
+                # СОХРАНЯЕМ ПРОГРЕСС ПЕРЕД ВЫХОДОМ В ГЛАВНОЕ МЕНЮ
+                if chat_id in USER_LESSON_STATE:
+                    save_lesson_progress(chat_id)
+                
+                menu_data = menu_manager.get_main_menu()
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                return jsonify({"status": "ok"})
+            
+            elif callback_text == "menu_premium":
+                menu_data = menu_manager.get_premium_menu()
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                return jsonify({"status": "ok"})
+            
+            elif callback_text == "menu_profile":
+                menu_data = menu_manager.get_profile_menu(chat_id)
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                return jsonify({"status": "ok"})
+            
+            elif callback_text == "menu_development_fund":
+                menu_data = menu_manager.get_development_fund_menu()
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                return jsonify({"status": "ok"})
+            
+            elif callback_text.startswith("menu_course_"):
+                course_name = callback_text.replace("menu_course_", "")
+                try:
+                    menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                except Exception as e:
+                    logging.error(f"Error opening course {course_name}: {e}")
+                    menu_data = menu_manager.get_main_menu()
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                
+                return jsonify({"status": "ok"})
+            
+            # ДИАЛОГОВЫЕ УРОКИ
+            elif callback_text.startswith('start_lesson_'):
+                # ПАРСИМ КУРС И ИНДЕКС УРОКА
+                parts = callback_text.replace('start_lesson_', '').split('_')
+                if len(parts) >= 2:
+                    course_name = parts[0]
+                    lesson_index = int(parts[1])
+                    
+                    # НАХОДИМ УРОК
+                    if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
+                        lesson = COURSES[course_name]['уроки'][lesson_index]
+                        
+                        # ПРОВЕРЯЕМ ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС
+                        has_saved_progress = restore_lesson_progress(chat_id)
+                        
+                        if has_saved_progress and USER_LESSON_STATE[chat_id]['current_lesson'] == lesson:
+                            # ПРОДОЛЖАЕМ С СОХРАНЕННОГО МЕСТА
+                            last_conversation = USER_LESSON_STATE[chat_id]['conversation']
+                            
+                            # ИЩЕМ ПОСЛЕДНЕЕ СООБЩЕНИЕ УЧИТЕЛЯ
+                            teacher_messages = [msg for msg in last_conversation if msg["role"] == "teacher"]
+                            if teacher_messages:
+                                last_teacher_msg = teacher_messages[-1]['content']
+                                summary = last_teacher_msg[:50] + "..." if len(last_teacher_msg) > 50 else last_teacher_msg
+                            else:
+                                summary = "начале урока"
+                            
+                            reactions = [
+                                f"Отлично, что вернулись! 😊 Продолжим с: *{summary}*",
+                                f"С возвращением! Мы остановились на: *{summary}*",
+                                f"Рад вас снова видеть! Продолжаем: *{summary}*"
+                            ]
+                            
+                            welcome_text = f"""🧠 *Учитель NeuroTeacher*
 
 📚 Тема: {lesson}
 
 {random.choice(reactions)}"""
-    else:
-        USER_LESSON_STATE[chat_id] = {
-            "current_lesson": lesson,
-            "step": 0,
-            "conversation": [],
-            "started_at": datetime.now().isoformat()
-        }
-        
-        greetings = [
-            f"Привет! Начнем изучать {lesson}",
-            f"Добро пожаловать на урок: {lesson}",
-            f"Начнем наше погружение в {lesson}"
-        ]
-        
-        welcome_text = f"""🧠 *Учитель NeuroTeacher*
+                        else:
+                            # НАЧИНАЕМ НОВЫЙ УРОК
+                            USER_LESSON_STATE[chat_id] = {
+                                "current_lesson": lesson,
+                                "step": 0,
+                                "conversation": []
+                            }
+                            
+                            greetings = [
+                                f"Привет! Начнем изучать {lesson}",
+                                f"Добро пожаловать на урок: {lesson}",
+                                f"Начнем наше погружение в {lesson}"
+                            ]
+                            
+                            welcome_text = f"""🧠 *Учитель NeuroTeacher*
 
 📚 Тема: {lesson}
 
 {random.choice(greetings)}"""
-    
-    keyboard = {
-        "inline_keyboard": [
-            [{"text": "❓ Задать вопрос", "callback_data": "ask_question"}],
-            [{"text": "📚 Следующий раздел", "callback_data": "next_section"}],
-            [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
-        ]
-    }
-    
-    edit_main_message(chat_id, welcome_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
+                        
+                        keyboard = {
+                            "inline_keyboard": [
+                                [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
+                            ]
+                        }
+                        
+                        edit_main_message(chat_id, welcome_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
+                
+                return jsonify({"status": "ok"})
+            
+            elif callback_text == "menu_course_back":
+                # СОХРАНЯЕМ ПРОГРЕСС ПЕРЕД ВЫХОДОМ
+                if chat_id in USER_LESSON_STATE:
+                    save_lesson_progress(chat_id)
+                
+                # НАХОДИМ КУРС ДЛЯ ВОЗВРАТА
+                current_lesson = USER_LESSON_STATE.get(chat_id, {}).get('current_lesson', '')
+                found_course = None
+                
+                for course_name, course_info in COURSES.items():
+                    if current_lesson in course_info['уроки']:
+                        found_course = course_name
+                        break
+                
+                if found_course:
+                    menu_data = menu_manager.get_enhanced_course_menu(found_course, chat_id)
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                else:
+                    # ЕСЛИ КУРС НЕ НАЙДЕН - В ГЛАВНОЕ МЕНЮ
+                    menu_data = menu_manager.get_main_menu()
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                
+                return jsonify({"status": "ok"})
 
-def handle_message(message):
-    """Обрабатывает текстовые сообщения"""
-    chat_id = message.get('chat', {}).get('id')
-    text = message.get('text', '')
-    message_id = message.get('message_id')
-    
-    if not chat_id:
-        return jsonify({"status": "error", "message": "No chat_id"})
-    
-    if text == '/start':
-        menu_data = menu_manager.get_main_menu()
-        send_telegram_message(chat_id, menu_data['text'], menu_data['keyboard'])
-        return jsonify({"status": "ok"})
-    
-    elif text == '/menu':
-        menu_data = menu_manager.get_main_menu()
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        return jsonify({"status": "ok"})
-    
-    elif text == '/stats':
-        stats_text = f"""📊 *Статистика NeuroTeacher*
+        # ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ
+        message = data.get('message', {})
+        chat_id = message.get('chat', {}).get('id')
+        text = message.get('text', '')
+        message_id = message.get('message_id')
 
-👥 Пользователей: {len(USER_PROGRESS)}
-📚 Активных уроков: {len(USER_LESSON_STATE)}
-💫 AI статус: {'✅ Работает' if dialog_teacher.healthy else '❌ Ошибка'}
+        if not chat_id:
+            return jsonify({"status": "error", "message": "No chat_id"})
 
-💎 Фонд развития: {DEVELOPMENT_FUND['development_fund']} TON"""
-        send_telegram_message(chat_id, stats_text)
-        return jsonify({"status": "ok"})
-    
-    elif text == '/help':
-        menu_data = menu_manager.get_help_menu()
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        return jsonify({"status": "ok"})
-    
-    # Обработка диалога в уроке
-    lesson_state = USER_LESSON_STATE.get(chat_id, {})
-    if lesson_state and "current_lesson" in lesson_state:
-        current_lesson = lesson_state["current_lesson"]
+        if text == '/start':
+            menu_data = menu_manager.get_main_menu()
+            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
+            return jsonify({"status": "ok"})
         
-        # Удаляем сообщение пользователя для чистоты диалога
-        if message_id:
-            delete_user_message(chat_id, message_id)
-        
-        # Обновляем состояние и получаем ответ
-        update_lesson_state(chat_id, current_lesson, lesson_state["step"], text)
-        menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, text)
-        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-        
-        # Отмечаем урок как пройденный если было достаточно шагов
-        if lesson_state["step"] >= 3:  # После 3 шагов считаем урок пройденным
-            update_user_progress(chat_id, current_lesson)
-        
-        return jsonify({"status": "ok"})
-    
-    # Если не в уроке, показываем главное меню
-    menu_data = menu_manager.get_main_menu()
-    send_telegram_message(chat_id, "Выберите действие:", menu_data['keyboard'])
-    return jsonify({"status": "ok"})
+        lesson_state = USER_LESSON_STATE.get(chat_id, {})
+        if lesson_state and "current_lesson" in lesson_state:
+            current_lesson = lesson_state["current_lesson"]
+            
+            # УДАЛЯЕМ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ
+            if message_id:
+                delete_user_message(chat_id, message_id)
+            
+            # ОБНОВЛЯЕМ СОСТОЯНИЕ И ПОЛУЧАЕМ ОТВЕТ
+            update_lesson_state(chat_id, current_lesson, lesson_state["step"], text)
+            menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, text)
+            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+            
+            return jsonify({"status": "ok"})
 
-@app.route('/set_webhook', methods=['GET'])
-def set_webhook():
-    """Устанавливает webhook для Telegram"""
-    webhook_url = os.getenv('WEBHOOK_URL')
-    if not webhook_url:
-        return jsonify({"status": "error", "message": "WEBHOOK_URL not set"})
-    
-    try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
-            json={"url": f"{webhook_url}/webhook"}
-        )
-        return jsonify(response.json())
+        return jsonify({"status": "ok"})        
+        
     except Exception as e:
+        logging.error(f"Webhook error: {e}")
         return jsonify({"status": "error", "message": str(e)})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('DEBUG', 'False').lower() == 'true'
-    
-    logger.info(f"Starting NeuroTeacher bot on port {port}")
-    logger.info(f"AI Teacher status: {'Healthy' if dialog_teacher.healthy else 'Unhealthy'}")
-    
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    app.run(host='0.0.0.0', port=port)
