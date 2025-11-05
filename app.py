@@ -9,11 +9,19 @@ import time
 
 app = Flask(__name__)
 
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+
 # Настройка API ключей для Gemini
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if not GEMINI_API_KEY:
+    logging.warning("GEMINI_API_KEY not found in environment variables")
 genai.configure(api_key=GEMINI_API_KEY)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TELEGRAM_TOKEN:
+    logging.warning("TELEGRAM_TOKEN not found in environment variables")
+
 TON_WALLET = os.getenv('TON_WALLET', 'UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY')
 
 def delete_user_message(chat_id, message_id):
@@ -24,7 +32,8 @@ def delete_user_message(chat_id, message_id):
             json={
                 "chat_id": chat_id,
                 "message_id": message_id
-            }
+            },
+            timeout=10
         )
         return response.json()
     except Exception as e:
@@ -73,9 +82,28 @@ DEVELOPMENT_FUND = {
 # 🎯 УЛУЧШЕННЫЙ ДИАЛОГОВЫЙ AI-ПРЕПОДАВАТЕЛЬ (GEMINI)
 class DialogAITeacher:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        try:
+            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        except Exception as e:
+            logging.error(f"Error initializing Gemini model: {e}")
+            self.model = None
+
+    def _format_conversation_history(self, conversation_history):
+        """Форматирует историю диалога для промпта"""
+        if not conversation_history:
+            return "История диалога пуста."
+        
+        formatted = []
+        for msg in conversation_history[-6:]:  # Берем последние 6 сообщений
+            role = "Ученик" if msg.get("role") == "student" else "Учитель"
+            formatted.append(f"{role}: {msg.get('content', '')}")
+        
+        return "\n".join(formatted)
 
     def generate_lesson_step(self, lesson_topic, user_level, conversation_history, current_step):
+        if not self.model:
+            return "Извините, сервис AI временно недоступен. Пожалуйста, попробуйте позже."
+        
         # Простой промпт без лишних ограничений
         prompt = f"""
         Ты - преподаватель NeuroTeacher. Тема урока: {lesson_topic}
@@ -84,17 +112,19 @@ class DialogAITeacher:
         {self._format_conversation_history(conversation_history)}
         
         Продолжи урок естественно, как опытный наставник. Дай полезную информацию по теме.
+        Будь кратким и информативным, отвечай на русском языке.
         """
         
         try:
             response = self.model.generate_content(prompt)
-            return response.text
+            return response.text if response.text else "Что вам особенно интересно в этой теме?"
         except Exception as e:
             logging.error(f"Gemini API error: {e}")
             return "Что вам особенно интересно в этой теме?"
 
     def create_progress_tracker(self, completed_lessons, total_lessons=4):
-        progress_percent = (completed_lessons / total_lessons) * 100
+        progress_percent = (completed_lessons / total_lessons) * 100 if total_lessons > 0 else 0
+        completed_lessons = min(completed_lessons, total_lessons)
         progress_bar = "🟩" * completed_lessons + "⬜" * (total_lessons - completed_lessons)
         
         achievements = []
@@ -151,14 +181,15 @@ def update_lesson_state(chat_id, lesson_name, step=0, user_message=None):
             "step": step,
             "conversation": []
         }
+    else:
+        USER_LESSON_STATE[chat_id]["current_lesson"] = lesson_name
+        USER_LESSON_STATE[chat_id]["step"] = step
     
     if user_message:
         USER_LESSON_STATE[chat_id]["conversation"].append({
             "role": "student", 
             "content": user_message
         })
-    
-    USER_LESSON_STATE[chat_id]["step"] = step
 
 def add_teacher_response(chat_id, teacher_message):
     if chat_id in USER_LESSON_STATE:
@@ -206,7 +237,8 @@ class MenuManager:
         progress = USER_PROGRESS.get(user_id, {"пройденные_уроки": [], "уровень": 1, "баллы": 0})
         
         progress_data = dialog_teacher.create_progress_tracker(
-            len(progress['пройденные_уроки'])
+            len([lesson for lesson in course_info['уроки'] if lesson in progress['пройденные_уроки']]),
+            len(course_info['уроки'])
         )
         
         lesson_buttons = []
@@ -470,7 +502,11 @@ def telegram_webhook():
                 parts = callback_text.replace('start_lesson_', '').split('_')
                 if len(parts) >= 2:
                     course_name = parts[0]
-                    lesson_index = int(parts[1])
+                    try:
+                        lesson_index = int(parts[1])
+                    except ValueError:
+                        logging.error(f"Invalid lesson index: {parts[1]}")
+                        return jsonify({"status": "error"})
                     
                     # НАХОДИМ УРОК
                     if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
@@ -479,14 +515,14 @@ def telegram_webhook():
                         # ПРОВЕРЯЕМ ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС
                         has_saved_progress = restore_lesson_progress(chat_id)
                         
-                        if has_saved_progress and USER_LESSON_STATE[chat_id]['current_lesson'] == lesson:
+                        if has_saved_progress and USER_LESSON_STATE.get(chat_id, {}).get('current_lesson') == lesson:
                             # ПРОДОЛЖАЕМ С СОХРАНЕННОГО МЕСТА
                             last_conversation = USER_LESSON_STATE[chat_id]['conversation']
                             
                             # ИЩЕМ ПОСЛЕДНЕЕ СООБЩЕНИЕ УЧИТЕЛЯ
-                            teacher_messages = [msg for msg in last_conversation if msg["role"] == "teacher"]
+                            teacher_messages = [msg for msg in last_conversation if msg.get("role") == "teacher"]
                             if teacher_messages:
-                                last_teacher_msg = teacher_messages[-1]['content']
+                                last_teacher_msg = teacher_messages[-1].get('content', '')
                                 summary = last_teacher_msg[:50] + "..." if len(last_teacher_msg) > 50 else last_teacher_msg
                             else:
                                 summary = "начале урока"
