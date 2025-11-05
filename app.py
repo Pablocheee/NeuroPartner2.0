@@ -236,6 +236,13 @@ class MenuManager:
         return {"text": text, "keyboard": keyboard}
     
     def get_enhanced_course_menu(self, course_name, user_id):
+        # Проверяем, существует ли курс
+        if course_name not in COURSES:
+            return {
+                "text": "❌ Курс не найден",
+                "keyboard": self.get_main_menu()["keyboard"]
+            }
+        
         course_info = COURSES[course_name]
         progress = USER_PROGRESS.get(user_id, {"пройденные_уроки": [], "уровень": 1, "баллы": 0})
         
@@ -379,7 +386,8 @@ class MenuManager:
 menu_manager = MenuManager()
 
 def edit_main_message(chat_id, text, keyboard, message_id=None):
-    if message_id and chat_id in USER_MESSAGE_IDS:
+    # Сначала пытаемся отредактировать существующее сообщение
+    if message_id:
         try:
             response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
@@ -389,27 +397,41 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
                     "text": text,
                     "reply_markup": keyboard,
                     "parse_mode": "Markdown"
-                }
+                },
+                timeout=10
             )
-            return response.json()
+            result = response.json()
+            if result.get('ok'):
+                return result
         except Exception as e:
-            logging.error(f"Error editing message: {e}")
+            logging.error(f"Error editing message {message_id}: {e}")
     
-    response = requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "reply_markup": keyboard,
-            "parse_mode": "Markdown"
-        }
-    )
-    
-    if response.status_code == 200:
-        result = response.json()
-        USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
-    
-    return response.json()
+    # Если редактирование не удалось, отправляем новое сообщение
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "reply_markup": keyboard,
+                "parse_mode": "Markdown"
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('ok'):
+                USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
+                return result
+        
+        # Если и отправка не удалась, логируем ошибку
+        logging.error(f"Failed to send message: {response.text}")
+        return {"ok": False, "error": response.text}
+        
+    except Exception as e:
+        logging.error(f"Error sending message: {e}")
+        return {"ok": False, "error": str(e)}
 
 @app.route('/')
 def home():
@@ -449,8 +471,20 @@ def telegram_webhook():
             
             elif callback_text.startswith("menu_course_"):
                 course_name = callback_text.replace("menu_course_", "")
-                menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                try:
+                    menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
+                    result = edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                    
+                    # Если редактирование не удалось, отправляем новое сообщение
+                    if 'result' not in result or not result.get('ok'):
+                        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
+                    
+                except Exception as e:
+                    logging.error(f"Error opening course {course_name}: {e}")
+                    # Отправляем сообщение об ошибке
+                    error_text = "❌ Не удалось загрузить курс. Попробуйте еще раз."
+                    edit_main_message(chat_id, error_text, menu_manager.get_main_menu()['keyboard'])
+                
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_premium":
