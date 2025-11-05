@@ -280,8 +280,9 @@ class MenuManager:
         lesson_buttons = []
         for i, lesson in enumerate(course_info['уроки']):
             status = "✅" if lesson in progress['пройденные_уроки'] else "📖"
+            # ИСПОЛЬЗУЕМ СТАБИЛЬНЫЙ ИДЕНТИФИКАТОР: курс_индекс
             lesson_buttons.append([
-                {"text": f"{status} Урок {i+1}: {lesson}", "callback_data": f"start_lesson_{hash(lesson)}"}
+                {"text": f"{status} Урок {i+1}: {lesson}", "callback_data": f"start_lesson_{course_name}_{i}"}
             ])
         
         progress_row = [{"text": f"📊 Прогресс: {progress_data['progress_bar']}", "callback_data": "show_progress"}]
@@ -540,11 +541,15 @@ def telegram_webhook():
             
             # ДИАЛОГОВЫЕ УРОКИ
             elif callback_text.startswith('start_lesson_'):
-                lesson_hash = callback_text.replace('start_lesson_', '')
-                
-                for course_name, course_info in COURSES.items():
-                    for lesson in course_info['уроки']:
-                        if hash(lesson) == int(lesson_hash):
+                # ПАРСИМ КУРС И ИНДЕКС УРОКА ИЗ callback_data
+                parts = callback_text.replace('start_lesson_', '').split('_')
+                if len(parts) >= 2:
+                    course_name = parts[0]
+                    lesson_index = int(parts[1])
+                    
+                    # НАХОДИМ УРОК ПО КУРСУ И ИНДЕКСУ
+                    if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
+                        lesson = COURSES[course_name]['уроки'][lesson_index]
                             
                             # ПРОВЕРЯЕМ, ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС ДЛЯ ЭТОГО КУРСА
                             restored_lesson = restore_lesson_progress(chat_id, course_name)
