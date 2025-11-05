@@ -76,60 +76,22 @@ class DialogAITeacher:
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
     def generate_lesson_step(self, lesson_topic, user_level, conversation_history, current_step):
-        system_prompt = f"""
-        Ты - NeuroTeacher, эксперт который РАЗВИВАЕТ тему урока структурировано и последовательно.
-
-        ТЕМА УРОКА: {lesson_topic}
-        Уровень ученика: {user_level}/5
-        Текущий шаг: {current_step}
+        # Простой промпт без лишних ограничений
+        prompt = f"""
+        Ты - преподаватель NeuroTeacher. Тема урока: {lesson_topic}
         
-        ПРЕДЫДУЩИЙ ДИАЛОГ:
+        История диалога:
         {self._format_conversation_history(conversation_history)}
         
-        КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
-        1. РАЗВИВАЙ ТЕМУ ВПЕРЕД - каждый твой ответ должен добавлять новую информацию
-        2. КОНКРЕТНЫЕ ЗНАНИЯ - давай факты, техники, методики, примеры
-        3. СТРУКТУРИРОВАННЫЙ ПОДХОД:
-           - Объясни новый концепт
-           - Приведи практический пример
-           - Покажи как это применить
-        4. ИЗБЕГАЙ ПОВТОРЕНИЙ - не говори "давайте продолжим", "перейдем дальше"
-        5. ЕСТЕСТВЕННОЕ РАЗВИТИЕ - плавно переходи от одного аспекта к другому
-        6. ПРАКТИЧЕСКАЯ ЦЕННОСТЬ - фокус на том, что можно использовать
-        7. КРАТКОСТЬ - 2-3 предложения содержательной информации
-
-        СТИЛЬ ОБЩЕНИЯ:
-        - Эксперт, делящийся знаниями
-        - Практик, показывающий применение
-        - Наставник, вдохновляющий на изучение
-
-        СЕЙЧАС: Развивай тему "{lesson_topic}" дальше. Добавь новый аспект, технику или пример.
+        Продолжи урок естественно, как опытный наставник. Дай полезную информацию по теме.
         """
         
         try:
-            response = self.model.generate_content(
-                system_prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=300,
-                    temperature=0.8
-                )
-            )
+            response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
             logging.error(f"Gemini API error: {e}")
-            return "Расскажу вам о следующем важном аспекте этой темы..."
-
-    def _format_conversation_history(self, history):
-        if not history:
-            return "Диалог начинается"
-        
-        formatted = []
-        for msg in history[-6:]:  # Берем больше истории для контекста
-            role = "Ученик" if msg["role"] == "student" else "Учитель"
-            content = msg['content']
-            formatted.append(f"{role}: {content}")
-        
-        return "\n".join(formatted)
+            return "Что вам особенно интересно в этой теме?"
 
     def create_progress_tracker(self, completed_lessons, total_lessons=4):
         progress_percent = (completed_lessons / total_lessons) * 100
