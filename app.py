@@ -201,8 +201,9 @@ class MenuManager:
         keyboard = {
             "inline_keyboard": [
                 [
-                    {"text": "🚀 Войти в систему AI", "callback_data": "menu_course_🚀 Войти в систему AI"},
-                    {"text": "💫 Запустить эволюцию", "callback_data": "menu_course_💫 Запустить эволюцию"}
+                    # ИСПОЛЬЗУЕМ ПРОСТЫЕ ИДЕНТИФИКАТОРЫ БЕЗ ЭМОДЗИ
+                    {"text": "🚀 Войти в систему AI", "callback_data": "course_ai_system"},
+                    {"text": "💫 Запустить эволюцию", "callback_data": "course_evolution"}
                 ],
                 [
                     {"text": "💰 Премиум доступ", "callback_data": "menu_premium"},
@@ -222,9 +223,18 @@ class MenuManager:
         
         return {"text": text, "keyboard": keyboard}
     
-    def get_enhanced_course_menu(self, course_name, user_id):
+    def get_enhanced_course_menu(self, course_key, user_id):
+        # СОЗДАЕМ СООТВЕТСТВИЕ МЕЖДУ ПРОСТЫМИ КЛЮЧАМИ И ПОЛНЫМИ ИМЕНАМИ
+        COURSE_MAPPING = {
+            "course_ai_system": "🚀 Войти в систему AI",
+            "course_evolution": "💫 Запустить эволюцию"
+        }
+        
+        # ПРЕОБРАЗУЕМ ПРОСТОЙ КЛЮЧ В ПОЛНОЕ ИМЯ КУРСА
+        course_name = COURSE_MAPPING.get(course_key)
+        
         # Проверяем, существует ли курс
-        if course_name not in COURSES:
+        if not course_name or course_name not in COURSES:
             return {
                 "text": "❌ Курс не найден",
                 "keyboard": self.get_main_menu()["keyboard"]
@@ -240,8 +250,9 @@ class MenuManager:
         lesson_buttons = []
         for i, lesson in enumerate(course_info['уроки']):
             status = "✅" if lesson in progress['пройденные_уроки'] else "📖"
+            # ИСПОЛЬЗУЕМ ПРОСТОЙ КЛЮЧ КУРСА В CALLBACK_DATA
             lesson_buttons.append([
-                {"text": f"{status} Урок {i+1}: {lesson}", "callback_data": f"start_lesson_{course_name}_{i}"}
+                {"text": f"{status} Урок {i+1}: {lesson}", "callback_data": f"start_lesson_{course_key}_{i}"}
             ])
         
         progress_row = [{"text": f"📊 Прогресс: {progress_data['progress_bar']}", "callback_data": "show_progress"}]
@@ -264,182 +275,7 @@ class MenuManager:
 
 💫 *Выберите урок для начала:*"""
         
-        return {"text": text, "keyboard": keyboard}
-    
-    def get_premium_menu(self):
-        payment_link = generate_ton_payment_link("premium_user")
-        
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "💳 Активировать полный доступ", "url": payment_link}],
-                [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
-            ]
-        }
-        
-        text = """💰 *ПРЕМИУМ ДОСТУП*
-
-Откройте полный потенциал NeuroTeacher:
-
-✅ Все курсы и уроки
-🎓 Персональный AI-наставник 24/7
-📊 Детальная аналитика прогресса
-🔮 Эксклюзивные материалы
-
-⚡ *Инвестиция в развитие: 10 TON/месяц*"""
-        
-        return {"text": text, "keyboard": keyboard}
-    
-    def get_profile_menu(self, chat_id):
-        progress = USER_PROGRESS.get(chat_id, {"пройденные_уроки": [], "уровень": 1, "баллы": 0})
-        
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
-            ]
-        }
-        
-        text = f"""👤 *ВАШ ПРОФИЛЬ*
-
-📊 Уровень: {progress['уровень']}
-🎯 Баллы: {progress['баллы']}
-📚 Пройдено уроков: {len(progress['пройденные_уроки'])}
-
-🌍 *ФОНД РАЗВИТИЯ*
-💫 Собрано в фонд: {DEVELOPMENT_FUND['development_fund']} TON
-🚀 Всего доходов: {DEVELOPMENT_FUND['total_income']} TON
-
-💫 *Продолжаем обучение!*"""
-        
-        return {"text": text, "keyboard": keyboard}
-    
-    def get_development_fund_menu(self):
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔙 Назад к меню", "callback_data": "menu_main"}]
-            ]
-        }
-        
-        text = f"""🌍 *СИСТЕМА DEVELOPMENT FUND*
-
-💰 Всего доходов: {DEVELOPMENT_FUND['total_income']} TON
-💫 Накоплено в фонд развития: {DEVELOPMENT_FUND['development_fund']} TON  
-🚀 Маркетинг бюджет: {DEVELOPMENT_FUND['marketing_budget']} TON
-
-📊 Распределение доходов:
-• 70% - развитие платформы
-• 20% - маркетинг и привлечение  
-• 10% - основателю
-
-⚡ *Создаем будущее образования вместе*"""
-        
-        return {"text": text, "keyboard": keyboard}
-    
-    def get_dialog_lesson(self, chat_id, lesson_topic, user_input=None):
-        user_level = USER_PROGRESS.get(chat_id, {}).get('уровень', 1)
-        lesson_state = USER_LESSON_STATE.get(chat_id, {})
-        
-        conversation_history = lesson_state.get("conversation", [])
-        current_step = lesson_state.get("step", 0)
-        
-        # Генерируем следующий шаг урока через Gemini
-        teacher_response = dialog_teacher.generate_lesson_step(
-            lesson_topic, 
-            user_level, 
-            conversation_history, 
-            current_step
-        )
-        
-        # Добавляем ответ учителя в историю
-        add_teacher_response(chat_id, teacher_response)
-        
-        # Обновляем шаг
-        update_lesson_state(chat_id, lesson_topic, current_step + 1)
-        
-        # ПРОСТАЯ КЛАВИАТУРА - ТОЛЬКО НАЗАД
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔙 Назад к курсу", "callback_data": "menu_course_back"}]
-            ]
-        }
-        
-        text = f"""📚 *{lesson_topic}*
-
-{teacher_response}"""
-        
-        return {"text": text, "keyboard": keyboard}
-
-# Инициализация менеджера
-menu_manager = MenuManager()
-
-def edit_main_message(chat_id, text, keyboard, message_id=None):
-    """Редактирует сообщение или отправляет новое"""
-    
-    # Используем сохраненный message_id если не передан
-    if message_id is None and chat_id in USER_MESSAGE_IDS:
-        message_id = USER_MESSAGE_IDS[chat_id]
-    
-    # Пытаемся отредактировать существующее сообщение
-    if message_id:
-        try:
-            response = requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
-                json={
-                    "chat_id": chat_id,
-                    "message_id": message_id,
-                    "text": text,
-                    "reply_markup": keyboard,
-                    "parse_mode": "Markdown"
-                },
-                timeout=10
-            )
-            result = response.json()
-            if result.get('ok'):
-                return result
-        except Exception as e:
-            logging.error(f"Error editing message {message_id}: {e}")
-    
-    # Если редактирование не удалось, отправляем новое сообщение
-    try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "reply_markup": keyboard,
-                "parse_mode": "Markdown"
-            },
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('ok'):
-                # СОХРАНЯЕМ ID НОВОГО СООБЩЕНИЯ
-                USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
-                return result
-        
-        logging.error(f"Failed to send message: {response.text}")
-        return {"ok": False}
-        
-    except Exception as e:
-        logging.error(f"Error sending message: {e}")
-        return {"ok": False}
-
-@app.route('/')
-def home():
-    return jsonify({
-        "status": "NeuroTeacher - Dialog Education Platform",
-        "version": "4.4", 
-        "ready": True,
-        "ai_provider": "Gemini Flash 2.0",
-        "founder_wallet": TON_WALLET
-    })
-
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "service": "NeuroTeacher", "ai": "Gemini Flash 2.0"})
-
-@app.route('/webhook', methods=['POST'])
+        return {"text": text, "keyboard": keyboard}@app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.json
@@ -478,19 +314,13 @@ def telegram_webhook():
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
-            elif callback_text.startswith("menu_course_"):
-                # ДЕБАГ: логируем что пришло
-                logging.info(f"Received callback: {callback_text}")
-                
-                course_name = callback_text.replace("menu_course_", "")
-                logging.info(f"Extracted course name: {course_name}")
-                
+            # ОБРАБОТКА КУРСОВ С ПРОСТЫМИ КЛЮЧАМИ
+            elif callback_text in ["course_ai_system", "course_evolution"]:
                 try:
-                    menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-                    logging.info(f"Successfully got menu data for: {course_name}")
+                    menu_data = menu_manager.get_enhanced_course_menu(callback_text, chat_id)
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 except Exception as e:
-                    logging.error(f"Error opening course {course_name}: {e}")
+                    logging.error(f"Error opening course {callback_text}: {e}")
                     menu_data = menu_manager.get_main_menu()
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 
@@ -501,8 +331,16 @@ def telegram_webhook():
                 # ПАРСИМ КУРС И ИНДЕКС УРОКА
                 parts = callback_text.replace('start_lesson_', '').split('_')
                 if len(parts) >= 2:
-                    course_name = parts[0]
+                    course_key = parts[0]
                     lesson_index = int(parts[1])
+                    
+                    # СООТВЕТСТВИЕ КЛЮЧЕЙ КУРСОВ
+                    COURSE_MAPPING = {
+                        "course_ai_system": "🚀 Войти в систему AI",
+                        "course_evolution": "💫 Запустить эволюцию"
+                    }
+                    
+                    course_name = COURSE_MAPPING.get(course_key)
                     
                     # НАХОДИМ УРОК
                     if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
@@ -577,7 +415,13 @@ def telegram_webhook():
                         break
                 
                 if found_course:
-                    menu_data = menu_manager.get_enhanced_course_menu(found_course, chat_id)
+                    # ПРЕОБРАЗУЕМ ПОЛНОЕ ИМЯ КУРСА В ПРОСТОЙ КЛЮЧ ДЛЯ ВОЗВРАТА
+                    COURSE_REVERSE_MAPPING = {
+                        "🚀 Войти в систему AI": "course_ai_system",
+                        "💫 Запустить эволюцию": "course_evolution"
+                    }
+                    course_key = COURSE_REVERSE_MAPPING.get(found_course, "course_ai_system")
+                    menu_data = menu_manager.get_enhanced_course_menu(course_key, chat_id)
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 else:
                     menu_data = menu_manager.get_main_menu()
