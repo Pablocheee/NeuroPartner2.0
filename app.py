@@ -462,33 +462,35 @@ def telegram_webhook():
                     save_lesson_progress(chat_id)
                 
                 menu_data = menu_manager.get_main_menu()
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                # ВАЖНО: передаем message_id текущего сообщения для редактирования
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_premium":
                 menu_data = menu_manager.get_premium_menu()
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_profile":
                 menu_data = menu_manager.get_profile_menu(chat_id)
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_development_fund":
                 menu_data = menu_manager.get_development_fund_menu()
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text.startswith("menu_course_"):
                 course_name = callback_text.replace("menu_course_", "")
                 try:
                     menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                    # ВАЖНО: редактируем текущее сообщение, а не создаем новое
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 except Exception as e:
                     logging.error(f"Error opening course {course_name}: {e}")
                     menu_data = menu_manager.get_main_menu()
-                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 
                 return jsonify({"status": "ok"})
             
@@ -556,7 +558,8 @@ def telegram_webhook():
                             ]
                         }
                         
-                        edit_main_message(chat_id, welcome_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
+                        # Редактируем текущее сообщение
+                        edit_main_message(chat_id, welcome_text, keyboard, message_id)
                 
                 return jsonify({"status": "ok"})
             
@@ -576,13 +579,48 @@ def telegram_webhook():
                 
                 if found_course:
                     menu_data = menu_manager.get_enhanced_course_menu(found_course, chat_id)
-                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 else:
                     # ЕСЛИ КУРС НЕ НАЙДЕН - В ГЛАВНОЕ МЕНЮ
                     menu_data = menu_manager.get_main_menu()
-                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 
                 return jsonify({"status": "ok"})
+
+        # ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ
+        message = data.get('message', {})
+        chat_id = message.get('chat', {}).get('id')
+        text = message.get('text', '')
+        message_id = message.get('message_id')
+
+        if not chat_id:
+            return jsonify({"status": "error", "message": "No chat_id"})
+
+        if text == '/start':
+            menu_data = menu_manager.get_main_menu()
+            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
+            return jsonify({"status": "ok"})
+        
+        lesson_state = USER_LESSON_STATE.get(chat_id, {})
+        if lesson_state and "current_lesson" in lesson_state:
+            current_lesson = lesson_state["current_lesson"]
+            
+            # УДАЛЯЕМ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ
+            if message_id:
+                delete_user_message(chat_id, message_id)
+            
+            # ОБНОВЛЯЕМ СОСТОЯНИЕ И ПОЛУЧАЕМ ОТВЕТ
+            update_lesson_state(chat_id, current_lesson, lesson_state["step"], text)
+            menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, text)
+            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+            
+            return jsonify({"status": "ok"})
+
+        return jsonify({"status": "ok"})        
+        
+    except Exception as e:
+        logging.error(f"Webhook error: {e}")
+        return jsonify({"status": "error", "message": str(e)})
 
         # ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ
         message = data.get('message', {})
