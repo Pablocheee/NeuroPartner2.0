@@ -381,7 +381,7 @@ class MenuManager:
 # Инициализация менеджера
 menu_manager = MenuManager()
 
-def def edit_main_message(chat_id, text, keyboard, message_id=None):
+    def edit_main_message(chat_id, text, keyboard, message_id=None):
     """Редактирует сообщение или отправляет новое"""
     
     if not TELEGRAM_TOKEN:
