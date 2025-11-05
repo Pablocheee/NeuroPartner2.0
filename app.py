@@ -382,15 +382,23 @@ class MenuManager:
 menu_manager = MenuManager()
 
 def edit_main_message(chat_id, text, keyboard, message_id=None):
+    """Редактирует сообщение или отправляет новое"""
+    
     if not TELEGRAM_TOKEN:
-        logger.error("TELEGRAM_TOKEN not set")
+        logging.error("TELEGRAM_TOKEN not set")
         return {"ok": False}
         
+    logging.info(f"edit_main_message called - chat: {chat_id}, message_id: {message_id}")
+    
+    # Используем сохраненный message_id если не передан
     if message_id is None and chat_id in USER_MESSAGE_IDS:
         message_id = USER_MESSAGE_IDS[chat_id]
+        logging.info(f"Using saved message_id: {message_id}")
     
+    # Пытаемся отредактировать существующее сообщение
     if message_id:
         try:
+            logging.info(f"Attempting to edit message {message_id}")
             response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
                 json={
@@ -403,16 +411,19 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
                 timeout=10
             )
             result = response.json()
+            logging.info(f"Edit response: {result}")
             if result.get('ok'):
-                # ВАЖНО: Сохраняем message_id даже при редактировании
+                # ВАЖНО: Сохраняем message_id
                 USER_MESSAGE_IDS[chat_id] = message_id
-                logger.info(f"Message edited successfully, saved message_id: {message_id}")
+                logging.info(f"Successfully edited and saved message_id: {message_id}")
                 return result
             else:
-                logger.warning(f"Edit failed: {result}")
+                logging.error(f"Edit failed: {result}")
         except Exception as e:
             logging.error(f"Error editing message {message_id}: {e}")
     
+    # Если редактирование не удалось, отправляем новое сообщение
+    logging.info("Falling back to sending new message")
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -428,8 +439,10 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
         if response.status_code == 200:
             result = response.json()
             if result.get('ok'):
-                USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
-                logger.info(f"New message sent, saved message_id: {USER_MESSAGE_IDS[chat_id]}")
+                # СОХРАНЯЕМ ID НОВОГО СООБЩЕНИЯ
+                new_message_id = result['result']['message_id']
+                USER_MESSAGE_IDS[chat_id] = new_message_id
+                logging.info(f"New message sent with ID: {new_message_id}")
                 return result
         
         logging.error(f"Failed to send message: {response.text}")
@@ -453,7 +466,7 @@ def home():
 def health():
     return jsonify({"status": "healthy", "service": "NeuroTeacher", "ai": "Gemini Flash 2.0"})
 
-@app.route('/webhook', methods=['POST'])
+@app.route('/@app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.json
@@ -464,13 +477,13 @@ def telegram_webhook():
             callback_text = callback_data['data']
             message_id = callback_data['message']['message_id']
             
-            # ОТЛАДОЧНАЯ ИНФОРМАЦИЯ - ДОБАВЬ ЭТОТ БЛОК
-            logger.info(f"=== CALLBACK DEBUG ===")
-            logger.info(f"Chat ID: {chat_id}")
-            logger.info(f"Callback text: {callback_text}")
-            logger.info(f"Message ID: {message_id}")
-            logger.info(f"USER_MESSAGE_IDS: {USER_MESSAGE_IDS.get(chat_id, 'Not set')}")
-            logger.info(f"=== END DEBUG ===")
+            # ОТЛАДОЧНАЯ ИНФОРМАЦИЯ
+            logging.info(f"=== CALLBACK DEBUG ===")
+            logging.info(f"Chat ID: {chat_id}")
+            logging.info(f"Callback text: {callback_text}")
+            logging.info(f"Message ID: {message_id}")
+            logging.info(f"USER_MESSAGE_IDS: {USER_MESSAGE_IDS.get(chat_id, 'Not set')}")
+            logging.info(f"=== END DEBUG ===")
             
             requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
@@ -479,7 +492,7 @@ def telegram_webhook():
             
             # ОСНОВНЫЕ ОБРАБОТЧИКИ МЕНЮ
             if callback_text == "menu_main":
-                logger.info("Processing menu_main")
+                logging.info("Processing menu_main")
                 if chat_id in USER_LESSON_STATE:
                     save_lesson_progress(chat_id)
                 menu_data = menu_manager.get_main_menu()
@@ -487,30 +500,30 @@ def telegram_webhook():
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_premium":
-                logger.info("Processing menu_premium")
+                logging.info("Processing menu_premium")
                 menu_data = menu_manager.get_premium_menu()
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_profile":
-                logger.info("Processing menu_profile")
+                logging.info("Processing menu_profile")
                 menu_data = menu_manager.get_profile_menu(chat_id)
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_development_fund":
-                logger.info("Processing menu_development_fund")
+                logging.info("Processing menu_development_fund")
                 menu_data = menu_manager.get_development_fund_menu()
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text in ["course_ai_system", "course_evolution"]:
-                logger.info(f"Processing course: {callback_text}")
+                logging.info(f"Processing course: {callback_text}")
                 try:
                     menu_data = menu_manager.get_enhanced_course_menu(callback_text, chat_id)
                     # ВАЖНО: Сохраняем message_id перед редактированием
                     USER_MESSAGE_IDS[chat_id] = message_id
-                    logger.info(f"Saved message_id for course menu: {message_id}")
+                    logging.info(f"Saved message_id for course menu: {message_id}")
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 except Exception as e:
                     logging.error(f"Error opening course {callback_text}: {e}")
