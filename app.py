@@ -450,7 +450,7 @@ def telegram_webhook():
     logger.info("Webhook called")
     try:
         data = request.json
-        logger.info(f"Received data: {data}")
+        logger.info(f"Received data type: {type(data)}")
         
         if 'callback_query' in data:
             callback_data = data['callback_query']
@@ -458,14 +458,16 @@ def telegram_webhook():
             callback_text = callback_data['data']
             message_id = callback_data['message']['message_id']
             
-            logger.info(f"Callback: {callback_text} from chat {chat_id}")
+            logger.info(f"Callback received: {callback_text} from chat {chat_id}")
             
             requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery",
                 json={"callback_query_id": callback_data['id']}
             )
             
+            # ОСНОВНЫЕ ОБРАБОТЧИКИ МЕНЮ
             if callback_text == "menu_main":
+                logger.info("Processing menu_main")
                 if chat_id in USER_LESSON_STATE:
                     save_lesson_progress(chat_id)
                 menu_data = menu_manager.get_main_menu()
@@ -473,21 +475,25 @@ def telegram_webhook():
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_premium":
+                logger.info("Processing menu_premium")
                 menu_data = menu_manager.get_premium_menu()
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_profile":
+                logger.info("Processing menu_profile")
                 menu_data = menu_manager.get_profile_menu(chat_id)
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_development_fund":
+                logger.info("Processing menu_development_fund")
                 menu_data = menu_manager.get_development_fund_menu()
                 edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
             elif callback_text in ["course_ai_system", "course_evolution"]:
+                logger.info(f"Processing course: {callback_text}")
                 try:
                     menu_data = menu_manager.get_enhanced_course_menu(callback_text, chat_id)
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
@@ -497,11 +503,18 @@ def telegram_webhook():
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 return jsonify({"status": "ok"})
             
+            # ДИАЛОГОВЫЕ УРОКИ
             elif callback_text.startswith('start_lesson_'):
+                logger.info(f"Processing lesson start: {callback_text}")
+                # ПАРСИМ КУРС И ИНДЕКС УРОКА
                 parts = callback_text.replace('start_lesson_', '').split('_')
+                logger.info(f"Parsed parts: {parts}")
+                
                 if len(parts) >= 2:
                     course_key = parts[0]
                     lesson_index = int(parts[1])
+                    
+                    logger.info(f"Course key: {course_key}, Lesson index: {lesson_index}")
                     
                     COURSE_MAPPING = {
                         "course_ai_system": "🚀 Войти в систему AI",
@@ -509,14 +522,23 @@ def telegram_webhook():
                     }
                     
                     course_name = COURSE_MAPPING.get(course_key)
+                    logger.info(f"Mapped course name: {course_name}")
                     
+                    # НАХОДИМ УРОК
                     if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
                         lesson = COURSES[course_name]['уроки'][lesson_index]
+                        logger.info(f"Found lesson: {lesson}")
                         
+                        # ПРОВЕРЯЕМ ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС
                         has_saved_progress = restore_lesson_progress(chat_id)
+                        logger.info(f"Has saved progress: {has_saved_progress}")
                         
                         if has_saved_progress and USER_LESSON_STATE[chat_id]['current_lesson'] == lesson:
+                            # ПРОДОЛЖАЕМ С СОХРАНЕННОГО МЕСТА
                             last_conversation = USER_LESSON_STATE[chat_id]['conversation']
+                            logger.info(f"Continuing from saved progress, conversation length: {len(last_conversation)}")
+                            
+                            # ИЩЕМ ПОСЛЕДНЕЕ СООБЩЕНИЕ УЧИТЕЛЯ
                             teacher_messages = [msg for msg in last_conversation if msg["role"] == "teacher"]
                             if teacher_messages:
                                 last_teacher_msg = teacher_messages[-1]['content']
@@ -536,6 +558,8 @@ def telegram_webhook():
 
 {random.choice(reactions)}"""
                         else:
+                            # НАЧИНАЕМ НОВЫЙ УРОК
+                            logger.info("Starting new lesson")
                             USER_LESSON_STATE[chat_id] = {
                                 "current_lesson": lesson,
                                 "step": 0,
@@ -560,13 +584,22 @@ def telegram_webhook():
                             ]
                         }
                         
+                        logger.info(f"Sending lesson welcome message for: {lesson}")
                         edit_main_message(chat_id, welcome_text, keyboard, message_id)
+                    else:
+                        logger.error(f"Lesson not found: course={course_name}, index={lesson_index}")
+                else:
+                    logger.error(f"Invalid lesson callback format: {callback_text}")
+                
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_course_back":
+                logger.info("Processing menu_course_back")
+                # СОХРАНЯЕМ ПРОГРЕСС ПЕРЕД ВЫХОДОМ
                 if chat_id in USER_LESSON_STATE:
                     save_lesson_progress(chat_id)
                 
+                # НАХОДИМ КУРС ДЛЯ ВОЗВРАТА
                 current_lesson = USER_LESSON_STATE.get(chat_id, {}).get('current_lesson', '')
                 found_course = None
                 
@@ -588,35 +621,39 @@ def telegram_webhook():
                     edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
                 
                 return jsonify({"status": "ok"})
+            
+            else:
+                logger.warning(f"Unknown callback: {callback_text}")
 
         # ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ
         message = data.get('message', {})
-        chat_id = message.get('chat', {}).get('id')
-        text = message.get('text', '')
-        message_id = message.get('message_id')
+        if message:
+            chat_id = message.get('chat', {}).get('id')
+            text = message.get('text', '')
+            message_id = message.get('message_id')
 
-        if not chat_id:
-            return jsonify({"status": "error", "message": "No chat_id"})
+            if not chat_id:
+                return jsonify({"status": "error", "message": "No chat_id"})
 
-        if text == '/start':
-            logger.info(f"Start command from chat {chat_id}")
-            menu_data = menu_manager.get_main_menu()
-            result = edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
-            logger.info(f"Start command result: {result}")
-            return jsonify({"status": "ok"})
-        
-        lesson_state = USER_LESSON_STATE.get(chat_id, {})
-        if lesson_state and "current_lesson" in lesson_state:
-            current_lesson = lesson_state["current_lesson"]
+            if text == '/start':
+                logger.info(f"Start command from chat {chat_id}")
+                menu_data = menu_manager.get_main_menu()
+                result = edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
+                logger.info(f"Start command result: {result}")
+                return jsonify({"status": "ok"})
             
-            if message_id:
-                delete_user_message(chat_id, message_id)
-            
-            update_lesson_state(chat_id, current_lesson, lesson_state["step"], text)
-            menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, text)
-            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-            
-            return jsonify({"status": "ok"})
+            lesson_state = USER_LESSON_STATE.get(chat_id, {})
+            if lesson_state and "current_lesson" in lesson_state:
+                current_lesson = lesson_state["current_lesson"]
+                
+                if message_id:
+                    delete_user_message(chat_id, message_id)
+                
+                update_lesson_state(chat_id, current_lesson, lesson_state["step"], text)
+                menu_data = menu_manager.get_dialog_lesson(chat_id, current_lesson, text)
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
+                
+                return jsonify({"status": "ok"})
 
         return jsonify({"status": "ok"})        
         
