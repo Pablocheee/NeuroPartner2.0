@@ -171,6 +171,33 @@ class DialogAITeacher:
 # Инициализация преподавателя
 dialog_teacher = DialogAITeacher()
 
+# ФУНКЦИИ СОХРАНЕНИЯ ПРОГРЕССА УРОКОВ
+def save_lesson_progress(chat_id, course_name):
+    """Сохраняет прогресс урока перед выходом с привязкой к курсу"""
+    if chat_id in USER_LESSON_STATE:
+        lesson_state = USER_LESSON_STATE[chat_id]
+        SAVED_LESSON_PROGRESS[chat_id] = {
+            "course_name": course_name,
+            "current_lesson": lesson_state["current_lesson"],
+            "step": lesson_state["step"],
+            "conversation": lesson_state["conversation"][-3:],
+            "saved_at": "2025-01-11"
+        }
+
+def restore_lesson_progress(chat_id, course_name):
+    """Восстанавливает прогресс урока при возврате только для этого курса"""
+    if chat_id in SAVED_LESSON_PROGRESS:
+        saved_progress = SAVED_LESSON_PROGRESS[chat_id]
+        # ВОССТАНАВЛИВАЕМ ТОЛЬКО ЕСЛИ ЭТО ТОТ ЖЕ КУРС
+        if saved_progress.get("course_name") == course_name:
+            USER_LESSON_STATE[chat_id] = {
+                "current_lesson": saved_progress["current_lesson"],
+                "step": saved_progress["step"],
+                "conversation": saved_progress["conversation"]
+            }
+            return saved_progress["current_lesson"]
+    return None
+
 def generate_ton_payment_link(chat_id, amount=10):
     return f"https://app.tonkeeper.com/transfer/UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY?amount={amount*1000000000}&text=premium_{chat_id}"
 
@@ -386,7 +413,33 @@ class MenuManager:
 menu_manager = MenuManager()
 
 def edit_main_message(chat_id, text, keyboard, message_id=None):
-    """Всегда отправляет новое сообщение (простая версия)"""
+    """Редактирует сообщение или отправляет новое"""
+    
+    # Используем сохраненный message_id если не передан
+    if message_id is None and chat_id in USER_MESSAGE_IDS:
+        message_id = USER_MESSAGE_IDS[chat_id]
+    
+    # Пытаемся отредактировать существующее сообщение
+    if message_id:
+        try:
+            response = requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
+                json={
+                    "chat_id": chat_id,
+                    "message_id": message_id,
+                    "text": text,
+                    "reply_markup": keyboard,
+                    "parse_mode": "Markdown"
+                },
+                timeout=10
+            )
+            result = response.json()
+            if result.get('ok'):
+                return result
+        except Exception as e:
+            logging.error(f"Error editing message {message_id}: {e}")
+    
+    # Если редактирование не удалось, отправляем новое сообщение
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -402,6 +455,7 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
         if response.status_code == 200:
             result = response.json()
             if result.get('ok'):
+                # СОХРАНЯЕМ ID НОВОГО СООБЩЕНИЯ
                 USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
                 return result
         
@@ -445,46 +499,22 @@ def telegram_webhook():
             # ОСНОВНЫЕ ОБРАБОТЧИКИ МЕНЮ
             if callback_text == "menu_main":
                 menu_data = menu_manager.get_main_menu()
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
-                return jsonify({"status": "ok"})
-            
-            elif callback_text.startswith("menu_course_"):
-                course_name = callback_text.replace("menu_course_", "")
-                logging.info(f"User {chat_id} opening course: {course_name}")
-                
-                try:
-                    menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-                    logging.info(f"Course menu data generated for {course_name}")
-                    
-                    # ВСЕГДА ОТПРАВЛЯЕМ НОВОЕ СООБЩЕНИЕ ВМЕСТО РЕДАКТИРОВАНИЯ
-                    result = edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
-                    
-                    if result.get('ok'):
-                        logging.info(f"Course menu sent successfully for {course_name}")
-                    else:
-                        logging.error(f"Failed to send course menu for {course_name}")
-                        
-                except Exception as e:
-                    logging.error(f"Error opening course {course_name}: {e}")
-                    # Возвращаем в главное меню при ошибке
-                    menu_data = menu_manager.get_main_menu()
-                    edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'])
-                
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_premium":
                 menu_data = menu_manager.get_premium_menu()
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_profile":
                 menu_data = menu_manager.get_profile_menu(chat_id)
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
             elif callback_text == "menu_development_fund":
                 menu_data = menu_manager.get_development_fund_menu()
-                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
             
             # ДИАЛОГОВЫЕ УРОКИ
@@ -556,7 +586,7 @@ def telegram_webhook():
                                 ]
                             }
                             
-                            edit_main_message(chat_id, welcome_text, keyboard, message_id)
+                            edit_main_message(chat_id, welcome_text, keyboard, USER_MESSAGE_IDS.get(chat_id))
                             break
                 return jsonify({"status": "ok"})
             
@@ -579,7 +609,7 @@ def telegram_webhook():
 
 {menu_data['text']}"""
                             
-                            edit_main_message(chat_id, success_text, menu_data['keyboard'], message_id)
+                            edit_main_message(chat_id, success_text, menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                             break
                 return jsonify({"status": "ok"})
             
@@ -596,7 +626,7 @@ def telegram_webhook():
                                 "conversation": []
                             }
                             menu_data = menu_manager.get_dialog_lesson(chat_id, lesson)
-                            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                             break
                 return jsonify({"status": "ok"})
             
@@ -608,13 +638,13 @@ def telegram_webhook():
                 if current_lesson:
                     for course_name, course_info in COURSES.items():
                         if current_lesson in course_info['уроки']:
-                            save_lesson_progress(chat_id, course_name)  # ← ДОБАВИТЬ course_name
+                            save_lesson_progress(chat_id, course_name)
                             break
                 
                 for course_name, course_info in COURSES.items():
                     if current_lesson in course_info['уроки']:
                         menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-                        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], message_id)
+                        edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                         break
                 return jsonify({"status": "ok"})
 
