@@ -466,7 +466,7 @@ def home():
 def health():
     return jsonify({"status": "healthy", "service": "NeuroTeacher", "ai": "Gemini Flash 2.0"})
 
-@app.route('/@app.route('/webhook', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def telegram_webhook():
     try:
         data = request.json
