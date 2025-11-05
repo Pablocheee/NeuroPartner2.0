@@ -4,7 +4,8 @@ import google.generativeai as genai
 import os
 import requests
 import logging
-import random  # Добавлен импорт для random
+import random
+import time
 
 app = Flask(__name__)
 
@@ -15,7 +16,6 @@ genai.configure(api_key=GEMINI_API_KEY)
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TON_WALLET = os.getenv('TON_WALLET', 'UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY')
 
-# Добавь эту функцию после объявления TELEGRAM_TOKEN
 def delete_user_message(chat_id, message_id):
     """Удаляет сообщение пользователя"""
     try:
@@ -30,7 +30,7 @@ def delete_user_message(chat_id, message_id):
     except Exception as e:
         logging.error(f"Error deleting message: {e}")
         return None
-    
+
 # 🌌 БАЗА ЗНАНИЙ ОТ СИСТЕМЫ
 COURSES = {
     "🚀 Войти в систему AI": {
@@ -173,31 +173,37 @@ class DialogAITeacher:
 dialog_teacher = DialogAITeacher()
 
 # ФУНКЦИИ СОХРАНЕНИЯ ПРОГРЕССА УРОКОВ
-def save_lesson_progress(chat_id, course_name):
-    """Сохраняет прогресс урока перед выходом с привязкой к курсу"""
+def save_lesson_progress(chat_id, course_name, lesson_name):
+    """Сохраняет прогресс урока перед выходом с привязкой к курсу и уроку"""
     if chat_id in USER_LESSON_STATE:
         lesson_state = USER_LESSON_STATE[chat_id]
-        SAVED_LESSON_PROGRESS[chat_id] = {
+        # Сохраняем с привязкой к конкретному курсу и уроку
+        progress_key = f"{chat_id}_{course_name}_{lesson_name}"
+        SAVED_LESSON_PROGRESS[progress_key] = {
             "course_name": course_name,
+            "lesson_name": lesson_name,
             "current_lesson": lesson_state["current_lesson"],
             "step": lesson_state["step"],
-            "conversation": lesson_state["conversation"][-3:],
-            "saved_at": "2025-01-11"
+            "conversation": lesson_state["conversation"][-6:],  # Сохраняем больше сообщений
+            "saved_at": time.time()
         }
+        logging.info(f"Прогресс сохранен для {progress_key}: шаг {lesson_state['step']}")
 
-def restore_lesson_progress(chat_id, course_name):
-    """Восстанавливает прогресс урока при возврате только для этого курса"""
-    if chat_id in SAVED_LESSON_PROGRESS:
-        saved_progress = SAVED_LESSON_PROGRESS[chat_id]
-        # ВОССТАНАВЛИВАЕМ ТОЛЬКО ЕСЛИ ЭТО ТОТ ЖЕ КУРС
-        if saved_progress.get("course_name") == course_name:
+def restore_lesson_progress(chat_id, course_name, lesson_name):
+    """Восстанавливает прогресс урока при возврате для конкретного курса и урока"""
+    progress_key = f"{chat_id}_{course_name}_{lesson_name}"
+    if progress_key in SAVED_LESSON_PROGRESS:
+        saved_progress = SAVED_LESSON_PROGRESS[progress_key]
+        # ВОССТАНАВЛИВАЕМ ТОЛЬКО ЕСЛИ ЭТО ТОТ ЖЕ КУРС И УРОК
+        if saved_progress.get("course_name") == course_name and saved_progress.get("lesson_name") == lesson_name:
             USER_LESSON_STATE[chat_id] = {
                 "current_lesson": saved_progress["current_lesson"],
                 "step": saved_progress["step"],
                 "conversation": saved_progress["conversation"]
             }
-            return saved_progress["current_lesson"]
-    return None
+            logging.info(f"Прогресс восстановлен для {progress_key}: шаг {saved_progress['step']}")
+            return True
+    return False
 
 def generate_ton_payment_link(chat_id, amount=10):
     return f"https://app.tonkeeper.com/transfer/UQAVTMHfwYcMn7ttJNXiJVaoA-jjRTeJHc2sjpkAVzc84oSY?amount={amount*1000000000}&text=premium_{chat_id}"
@@ -552,9 +558,10 @@ def telegram_webhook():
                     if course_name in COURSES and 0 <= lesson_index < len(COURSES[course_name]['уроки']):
                         lesson = COURSES[course_name]['уроки'][lesson_index]
                         
-                        # ПРОВЕРЯЕМ, ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС ДЛЯ ЭТОГО КУРСА
-                        restored_lesson = restore_lesson_progress(chat_id, course_name)
-                        if restored_lesson == lesson:
+                        # ПРОВЕРЯЕМ, ЕСТЬ ЛИ СОХРАНЕННЫЙ ПРОГРЕСС ДЛЯ ЭТОГО КУРСА И УРОКА
+                        has_saved_progress = restore_lesson_progress(chat_id, course_name, lesson)
+                        
+                        if has_saved_progress:
                             # ЕСТЬ СОХРАНЕННЫЙ ПРОГРЕСС - ПРОДОЛЖАЕМ
                             last_conversation = USER_LESSON_STATE[chat_id]['conversation']
                             
@@ -568,11 +575,16 @@ def telegram_webhook():
                             ]
                             
                             if last_conversation:
-                                last_message = last_conversation[-1]['content']
-                                if len(last_message) > 40:
-                                    summary = last_message[:40] + "..."
+                                # Ищем последнее сообщение учителя для summary
+                                teacher_messages = [msg for msg in last_conversation if msg["role"] == "teacher"]
+                                if teacher_messages:
+                                    last_teacher_message = teacher_messages[-1]['content']
+                                    if len(last_teacher_message) > 40:
+                                        summary = last_teacher_message[:40] + "..."
+                                    else:
+                                        summary = last_teacher_message
                                 else:
-                                    summary = last_message
+                                    summary = "основах этой темы"
                             else:
                                 summary = "основах этой темы"
                             
@@ -582,7 +594,9 @@ def telegram_webhook():
 
 📚 Тема: {lesson}
 
-{reaction}"""
+{reaction}
+
+💫 *Продолжаем с того места, где остановились...*"""
                         else:
                             # НОВЫЙ УРОК ИЛИ ДРУГОЙ УРОК
                             USER_LESSON_STATE[chat_id] = {
@@ -616,69 +630,36 @@ def telegram_webhook():
                 
                 return jsonify({"status": "ok"})
             
-            elif callback_text.startswith('complete_lesson_'):
-                lesson_hash = callback_text.replace('complete_lesson_', '')
-                
-                for course_name, course_info in COURSES.items():
-                    for lesson in course_info['уроки']:
-                        if hash(lesson) == int(lesson_hash):
-                            update_user_progress(chat_id, lesson)
-                            if chat_id in USER_LESSON_STATE:
-                                del USER_LESSON_STATE[chat_id]
-                            
-                            menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
-                            success_text = f"""🎉 *Урок завершен!*
-
-📚 Тема: {lesson}
-🎯 Получено: 10 баллов
-💫 Уровень повышен!
-
-{menu_data['text']}"""
-                            
-                            edit_main_message(chat_id, success_text, menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-                            break
-                return jsonify({"status": "ok"})
-            
-            elif callback_text.startswith('restart_lesson_'):
-                lesson_hash = callback_text.replace('restart_lesson_', '')
-                
-                for course_name, course_info in COURSES.items():
-                    for lesson in course_info['уроки']:
-                        if hash(lesson) == int(lesson_hash):
-                            # ПЕРЕЗАПУСКАЕМ УРОК
-                            USER_LESSON_STATE[chat_id] = {
-                                "current_lesson": lesson,
-                                "step": 0,
-                                "conversation": []
-                            }
-                            menu_data = menu_manager.get_dialog_lesson(chat_id, lesson)
-                            edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-                            break
-                return jsonify({"status": "ok"})
-            
             elif callback_text == "menu_course_back":
                 lesson_state = USER_LESSON_STATE.get(chat_id, {})
                 current_lesson = lesson_state.get("current_lesson", "")
                 
                 # СОХРАНЯЕМ ПРОГРЕСС ПЕРЕД ВЫХОДОМ
                 if current_lesson:
+                    # Находим курс, к которому принадлежит текущий урок
                     for course_name, course_info in COURSES.items():
                         if current_lesson in course_info['уроки']:
-                            save_lesson_progress(chat_id, course_name)
+                            save_lesson_progress(chat_id, course_name, current_lesson)
+                            logging.info(f"Прогресс сохранен перед выходом: {course_name} - {current_lesson}")
                             break
                 
+                # Находим курс для возврата в меню курса
                 for course_name, course_info in COURSES.items():
                     if current_lesson in course_info['уроки']:
                         menu_data = menu_manager.get_enhanced_course_menu(course_name, chat_id)
                         edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
-                        break
+                        return jsonify({"status": "ok"})
+                
+                # Если курс не найден, возвращаем в главное меню
+                menu_data = menu_manager.get_main_menu()
+                edit_main_message(chat_id, menu_data['text'], menu_data['keyboard'], USER_MESSAGE_IDS.get(chat_id))
                 return jsonify({"status": "ok"})
 
         # ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ - БЕЗ ДУБЛИРОВАНИЯ
         message = data.get('message', {})
         chat_id = message.get('chat', {}).get('id')
         text = message.get('text', '')
-        message_id = message.get('message_id')  # ← ДОБАВЛЕНО
+        message_id = message.get('message_id')
 
         if not chat_id:
             return jsonify({"status": "error", "message": "No chat_id"})
