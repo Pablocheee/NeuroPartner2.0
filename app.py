@@ -416,7 +416,12 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
             )
             result = response.json()
             if result.get('ok'):
+                # ВАЖНО: Сохраняем message_id даже при редактировании
+                USER_MESSAGE_IDS[chat_id] = message_id
+                logger.info(f"Message edited successfully, saved message_id: {message_id}")
                 return result
+            else:
+                logger.warning(f"Edit failed: {result}")
         except Exception as e:
             logging.error(f"Error editing message {message_id}: {e}")
     
@@ -436,6 +441,7 @@ def edit_main_message(chat_id, text, keyboard, message_id=None):
             result = response.json()
             if result.get('ok'):
                 USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
+                logger.info(f"New message sent, saved message_id: {USER_MESSAGE_IDS[chat_id]}")
                 return result
         
         logging.error(f"Failed to send message: {response.text}")
