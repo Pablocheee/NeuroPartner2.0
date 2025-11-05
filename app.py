@@ -381,24 +381,16 @@ class MenuManager:
 # Инициализация менеджера
 menu_manager = MenuManager()
 
-    def edit_main_message(chat_id, text, keyboard, message_id=None):
-    """Редактирует сообщение или отправляет новое"""
-    
+ def edit_main_message(chat_id, text, keyboard, message_id=None):
     if not TELEGRAM_TOKEN:
         logger.error("TELEGRAM_TOKEN not set")
         return {"ok": False}
         
-    logger.info(f"edit_main_message called - chat: {chat_id}, message_id: {message_id}")
-    
-    # Используем сохраненный message_id если не передан
     if message_id is None and chat_id in USER_MESSAGE_IDS:
         message_id = USER_MESSAGE_IDS[chat_id]
-        logger.info(f"Using saved message_id: {message_id}")
     
-    # Пытаемся отредактировать существующее сообщение
     if message_id:
         try:
-            logger.info(f"Attempting to edit message {message_id}")
             response = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
                 json={
@@ -411,19 +403,16 @@ menu_manager = MenuManager()
                 timeout=10
             )
             result = response.json()
-            logger.info(f"Edit response: {result}")
             if result.get('ok'):
-                # ВАЖНО: Сохраняем message_id
+                # ВАЖНО: Сохраняем message_id даже при редактировании
                 USER_MESSAGE_IDS[chat_id] = message_id
-                logger.info(f"Successfully edited and saved message_id: {message_id}")
+                logger.info(f"Message edited successfully, saved message_id: {message_id}")
                 return result
             else:
-                logger.error(f"Edit failed: {result}")
+                logger.warning(f"Edit failed: {result}")
         except Exception as e:
             logging.error(f"Error editing message {message_id}: {e}")
     
-    # Если редактирование не удалось, отправляем новое сообщение
-    logger.info("Falling back to sending new message")
     try:
         response = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -439,10 +428,8 @@ menu_manager = MenuManager()
         if response.status_code == 200:
             result = response.json()
             if result.get('ok'):
-                # СОХРАНЯЕМ ID НОВОГО СООБЩЕНИЯ
-                new_message_id = result['result']['message_id']
-                USER_MESSAGE_IDS[chat_id] = new_message_id
-                logger.info(f"New message sent with ID: {new_message_id}")
+                USER_MESSAGE_IDS[chat_id] = result['result']['message_id']
+                logger.info(f"New message sent, saved message_id: {USER_MESSAGE_IDS[chat_id]}")
                 return result
         
         logging.error(f"Failed to send message: {response.text}")
